@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card mb-4">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="font-semibold text-lg">{{ dep.domain.name if dep.domain else "?" }}</div>
+      <div class="text-xs text-zinc-500">{{ dep.funnel.name if dep.funnel else "?" }}</div>
+    </div>
+    <span id="status-badge" class="badge
+      {% if dep.status == 'live' %} bg-emerald-900 text-emerald-300
+      {% elif dep.status == 'error' %} bg-red-900 text-red-300
+      {% else %} bg-zinc-800 text-zinc-200 {% endif %}">{{ dep.status }}</span>
+  </div>
+
+  {% if dep.status == 'live' %}
+    <a href="{{ dep.live_url }}" target="_blank" class="text-cyan-400 hover:underline text-sm mt-2 inline-block">{{ dep.live_url }}</a>
+  {% endif %}
+
+  <div class="flex gap-2 mt-3">
+    <form method="post" action="{{ url_for('deployments.retry_deployment', deployment_id=dep.id) }}">
+      <button class="btn bg-yellow-700 hover:bg-yellow-600 text-xs" type="submit">Tentar novamente</button>
+    </form>
+    <form method="post" action="{{ url_for('deployments.teardown_deployment', deployment_id=dep.id) }}" onsubmit="return confirm('Remover este deploy do VPS?');">
+      <button class="btn bg-red-900 hover:bg-red-800 text-xs" type="submit">Remover</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="font-semibold mb-2">Log ao vivo</div>
+  <pre id="log" class="text-xs bg-black rounded-lg p-3 h-96 overflow-y-auto whitespace-pre-wrap"></pre>
+</div>
+
+<script>
+  const logEl = document.getElementById("log");
+  const statusEl = document.getElementById("status-badge");
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/deploys/ws?id={{ dep.id }}&token={{ current_user.api_key }}`);
+
+  ws.onmessage = (evt) => {
+    if (evt.data.startsWith("__STATUS__:")) {
+      const status = evt.data.split(":")[1];
+      statusEl.textContent = status;
+      return;
+    }
+    logEl.textContent += evt.data + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+</script>
+{% endblock %}

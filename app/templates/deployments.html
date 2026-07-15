@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="font-semibold mb-3">Meus deploys</div>
+  {% if deployments %}
+    <div class="space-y-2">
+      {% for dep in deployments %}
+        <a href="{{ url_for('deployments.deployment_detail', deployment_id=dep.id) }}" class="flex items-center justify-between text-sm border-b border-zinc-800 pb-2 last:border-0 last:pb-0 hover:bg-zinc-900/50 -mx-2 px-2 rounded">
+          <div>
+            <div class="font-medium">{{ dep.domain.name if dep.domain else "?" }}</div>
+            <div class="text-xs text-zinc-500">{{ dep.funnel.name if dep.funnel else "?" }} • {{ dep.last_message }}</div>
+          </div>
+          <span class="badge
+            {% if dep.status == 'live' %} bg-emerald-900 text-emerald-300
+            {% elif dep.status == 'error' %} bg-red-900 text-red-300
+            {% else %} bg-zinc-800 text-zinc-200 {% endif %}">{{ dep.status }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-sm text-zinc-500">Nenhum deploy ainda.</div>
+  {% endif %}
+</div>
+{% endblock %}

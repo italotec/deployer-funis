@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="font-semibold mb-3">Catálogo de funis</div>
+  {% if funnels %}
+    <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+      {% for f in funnels %}
+        <a href="{{ url_for('funnels.funnel_detail', funnel_id=f.id) }}" class="block card hover:border-emerald-700">
+          <div class="font-medium">{{ f.name }}</div>
+          <div class="text-xs text-zinc-500 mt-1">{{ f.description or "Sem descrição" }}</div>
+          {% if f.has_php %}<span class="badge bg-indigo-900 text-indigo-300 mt-2">PHP</span>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-sm text-zinc-500">Nenhum funil cadastrado ainda.</div>
+  {% endif %}
+</div>
+{% endblock %}

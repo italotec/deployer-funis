@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid md:grid-cols-2 gap-4 mb-6">
+  <div class="card">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-semibold">Meus VPS</div>
+      <a href="{{ url_for('vps.vps_page') }}" class="text-xs text-cyan-400 hover:underline">gerenciar &rarr;</a>
+    </div>
+    {% if vpses %}
+      <div class="space-y-2">
+        {% for v in vpses %}
+          <div class="flex items-center justify-between text-sm border-b border-zinc-800 pb-2 last:border-0 last:pb-0">
+            <div>
+              <div class="font-medium">{{ v.label or v.ip_address or ("VPS #" ~ v.id) }}</div>
+              <div class="text-xs text-zinc-500">{{ v.provider }} • {{ v.ip_address or "sem IP" }} • {{ v.status }}</div>
+            </div>
+            <span class="badge bg-zinc-800 text-zinc-200">{{ v.deployment_count }} funil(is)</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-sm text-zinc-500">Nenhum VPS ainda. <a href="{{ url_for('vps.vps_page') }}" class="text-cyan-400 hover:underline">Comprar um</a>.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-semibold">Meus Domínios</div>
+      <a href="{{ url_for('domains.domains_page') }}" class="text-xs text-cyan-400 hover:underline">gerenciar &rarr;</a>
+    </div>
+    {% if domains %}
+      <div class="space-y-2">
+        {% for d in domains %}
+          <div class="flex items-center justify-between text-sm border-b border-zinc-800 pb-2 last:border-0 last:pb-0">
+            <div class="font-medium">{{ d.name }}</div>
+            <span class="badge bg-zinc-800 text-zinc-200">{{ d.status }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-sm text-zinc-500">Nenhum domínio ainda. <a href="{{ url_for('domains.domains_page') }}" class="text-cyan-400 hover:underline">Registrar um</a>.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="flex items-center justify-between mb-3">
+    <div class="font-semibold">Funis disponíveis</div>
+    <a href="{{ url_for('funnels.funnels_page') }}" class="text-xs text-cyan-400 hover:underline">ver todos &rarr;</a>
+  </div>
+  {% if funnels %}
+    <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+      {% for f in funnels %}
+        <a href="{{ url_for('funnels.funnel_detail', funnel_id=f.id) }}" class="block card hover:border-emerald-700">
+          <div class="font-medium">{{ f.name }}</div>
+          <div class="text-xs text-zinc-500 mt-1">{{ f.description or "Sem descrição" }}</div>
+          {% if f.has_php %}<span class="badge bg-indigo-900 text-indigo-300 mt-2">PHP</span>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-sm text-zinc-500">Nenhum funil cadastrado ainda.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="font-semibold mb-3">Deploys recentes</div>
+  {% if recent_deployments %}
+    <div class="space-y-2">
+      {% for dep in recent_deployments %}
+        <div class="flex items-center justify-between text-sm border-b border-zinc-800 pb-2 last:border-0 last:pb-0">
+          <div>
+            <div class="font-medium">{{ dep.domain.name if dep.domain else "?" }}</div>
+            <div class="text-xs text-zinc-500">{{ dep.funnel.name if dep.funnel else "?" }}</div>
+          </div>
+          <span class="badge
+            {% if dep.status == 'live' %} bg-emerald-900 text-emerald-300
+            {% elif dep.status == 'error' %} bg-red-900 text-red-300
+            {% else %} bg-zinc-800 text-zinc-200 {% endif %}">{{ dep.status }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-sm text-zinc-500">Nenhum deploy ainda.</div>
+  {% endif %}
+</div>
+{% endblock %}

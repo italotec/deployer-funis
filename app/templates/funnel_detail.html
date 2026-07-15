@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid lg:grid-cols-2 gap-6">
+  <div class="card">
+    <div class="font-semibold text-lg mb-1">{{ funnel.name }}</div>
+    <div class="text-sm text-zinc-400 mb-3">{{ funnel.description or "Sem descrição" }}</div>
+    {% if funnel.has_php %}<span class="badge bg-indigo-900 text-indigo-300">Requer PHP</span>{% endif %}
+  </div>
+
+  <div class="card">
+    <div class="font-semibold mb-3">Implantar este funil</div>
+
+    {% if not vpses %}
+      <div class="text-sm text-zinc-500">
+        Você precisa de um <a href="{{ url_for('vps.vps_page') }}" class="text-cyan-400 hover:underline">VPS pronto</a> para implantar.
+      </div>
+    {% elif not registrar_creds %}
+      <div class="text-sm text-zinc-500">
+        Cadastre uma <a href="{{ url_for('credentials.credentials_page') }}" class="text-cyan-400 hover:underline">credencial de registrador</a> primeiro.
+      </div>
+    {% else %}
+      <form method="post" action="{{ url_for('funnels.deploy_funnel', funnel_id=funnel.id) }}" class="space-y-3">
+        <div>
+          <label class="text-xs text-zinc-400">VPS de destino</label>
+          <select name="vps_id" class="input" required>
+            {% for v in vpses %}
+              <option value="{{ v.id }}">{{ v.label or ("VPS #" ~ v.id) }} — {{ v.ip_address }} ({{ v.deployment_count }} funil(is) já implantado(s))</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-400">Registrador (para domínios novos)</label>
+          <select name="registrar_credential_id" class="input" required>
+            {% for c in registrar_creds %}
+              <option value="{{ c.id }}">{{ c.label }} ({{ c.provider }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-400">Quantidade de domínios</label>
+          <input class="input" type="number" name="quantity" min="1" value="1" required>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-400">Domínios (um por linha, igual à quantidade acima)</label>
+          <textarea class="input" name="domains" rows="5" placeholder="meusite1.com&#10;meusite2.com" required></textarea>
+        </div>
+        <button class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center" type="submit">Implantar</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

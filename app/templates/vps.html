@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid lg:grid-cols-2 gap-6">
+  <div class="card">
+    <div class="font-semibold mb-3">Meus VPS</div>
+    {% if vpses %}
+      <div class="space-y-3">
+        {% for v in vpses %}
+          <div class="border border-zinc-800 rounded-lg p-3">
+            <div class="flex items-center justify-between">
+              <div class="font-medium">{{ v.label or ("VPS #" ~ v.id) }}</div>
+              <span class="badge
+                {% if v.status == 'ready' %} bg-emerald-900 text-emerald-300
+                {% elif v.status == 'error' %} bg-red-900 text-red-300
+                {% else %} bg-zinc-800 text-zinc-200 {% endif %}">{{ v.status }}</span>
+            </div>
+            <div class="text-xs text-zinc-500 mt-1">{{ v.provider }} • {{ v.region }} • {{ v.plan }}</div>
+            <div class="text-xs text-zinc-500">IP: {{ v.ip_address or "—" }}</div>
+            <div class="text-xs text-zinc-400 mt-1">{{ v.last_message }}</div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="badge bg-zinc-800 text-zinc-200">{{ v.deployment_count }} funil(is) implantado(s)</span>
+              <form method="post" action="{{ url_for('vps.destroy_vps', vps_id=v.id) }}" onsubmit="return confirm('Destruir este VPS?');">
+                <button class="btn bg-red-900 hover:bg-red-800 text-xs" type="submit">Destruir</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-sm text-zinc-500">Nenhum VPS ainda.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-semibold">Comprar VPS</div>
+      <button type="button" id="open-manual-vps-modal" class="btn bg-zinc-800 hover:bg-zinc-700 text-xs">+ Adicionar VPS manualmente</button>
+    </div>
+    {% if not creds %}
+      <div class="text-sm text-zinc-500">
+        Cadastre uma <a href="{{ url_for('credentials.credentials_page') }}" class="text-cyan-400 hover:underline">credencial de VPS</a> primeiro.
+      </div>
+    {% else %}
+      <form method="post" action="{{ url_for('vps.buy_vps') }}" class="space-y-3">
+        <div>
+          <label class="text-xs text-zinc-400">Credencial</label>
+          <select name="credential_id" class="input" id="cred-select" required>
+            {% for c in creds %}
+              <option value="{{ c.id }}" data-provider="{{ c.provider }}">{{ c.label }} ({{ c.provider }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-400">Rótulo</label>
+          <input class="input" type="text" name="label" placeholder="ex: vps-funil-01">
+        </div>
+        <div>
+          <label class="text-xs text-zinc-400">Plano</label>
+          <select name="plan" class="input" required>
+            {% for provider, plans in plans_by_provider.items() %}
+              {% for p in plans %}
+                <option value="{{ p.id }}">[{{ provider }}] {{ p.label }} — {{ p.price }}</option>
+              {% endfor %}
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-400">Região</label>
+          <select name="region" class="input" required>
+            {% for provider, regions in regions_by_provider.items() %}
+              {% for r in regions %}
+                <option value="{{ r.id }}">[{{ provider }}] {{ r.label }}</option>
+              {% endfor %}
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn bg-cyan-700 hover:bg-cyan-600 w-full justify-center" type="submit">Comprar VPS</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div id="manual-vps-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+  <div class="card w-full max-w-md">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-semibold">Adicionar VPS manualmente</div>
+      <button type="button" id="close-manual-vps-modal" class="text-zinc-400 hover:text-zinc-200 text-sm">✕</button>
+    </div>
+    <form method="post" action="{{ url_for('vps.add_manual_vps') }}" class="space-y-3">
+      <div>
+        <label class="text-xs text-zinc-400">Nome</label>
+        <input class="input" type="text" name="label" placeholder="ex: vps-manual-01">
+      </div>
+      <div>
+        <label class="text-xs text-zinc-400">Usuário SSH</label>
+        <input class="input" type="text" name="user" value="root" required>
+      </div>
+      <div>
+        <label class="text-xs text-zinc-400">IP</label>
+        <input class="input" type="text" name="ip" required>
+      </div>
+      <div>
+        <label class="text-xs text-zinc-400">Porta SSH</label>
+        <input class="input" type="number" name="port" value="22" required>
+      </div>
+      <div>
+        <label class="text-xs text-zinc-400">Senha SSH</label>
+        <input class="input" type="password" name="password" required>
+      </div>
+      <div class="text-xs text-zinc-500">
+        O usuário precisa ter acesso root (ou sudo sem senha), pois nginx/certbot serão instalados automaticamente após salvar.
+      </div>
+      <button class="btn bg-cyan-700 hover:bg-cyan-600 w-full justify-center" type="submit">Adicionar VPS</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  const manualVpsModal = document.getElementById("manual-vps-modal");
+  document.getElementById("open-manual-vps-modal").addEventListener("click", () => manualVpsModal.classList.remove("hidden"));
+  document.getElementById("close-manual-vps-modal").addEventListener("click", () => manualVpsModal.classList.add("hidden"));
+  manualVpsModal.addEventListener("click", (e) => {
+    if (e.target === manualVpsModal) manualVpsModal.classList.add("hidden");
+  });
+</script>
+{% endblock %}
