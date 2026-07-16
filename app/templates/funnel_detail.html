@@ -30,7 +30,7 @@
         </div>
         <div>
           <label class="text-xs text-zinc-400">Registrador (para domínios novos)</label>
-          <select name="registrar_credential_id" class="input" required>
+          <select name="registrar_credential_id" id="registrar-select" class="input" required>
             {% for c in registrar_creds %}
               <option value="{{ c.id }}">{{ c.label }} ({{ c.provider }})</option>
             {% endfor %}
@@ -38,15 +38,158 @@
         </div>
         <div>
           <label class="text-xs text-zinc-400">Quantidade de domínios</label>
-          <input class="input" type="number" name="quantity" min="1" value="1" required>
+          <input class="input" type="number" name="quantity" id="quantity-input" min="1" value="1" required>
         </div>
         <div>
-          <label class="text-xs text-zinc-400">Domínios (um por linha, igual à quantidade acima)</label>
-          <textarea class="input" name="domains" rows="5" placeholder="meusite1.com&#10;meusite2.com" required></textarea>
+          <label class="text-xs text-zinc-400">Domínios</label>
+          <div id="domain-inputs" class="space-y-2 mt-1"></div>
         </div>
-        <button class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center" type="submit">Implantar</button>
+        <button class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center" type="submit" id="deploy-btn" disabled>Implantar</button>
       </form>
     {% endif %}
   </div>
 </div>
+
+{% if vpses and registrar_creds %}
+<script>
+  const quantityInput = document.getElementById("quantity-input");
+  const domainInputsEl = document.getElementById("domain-inputs");
+  const registrarSelect = document.getElementById("registrar-select");
+  const deployBtn = document.getElementById("deploy-btn");
+  const CHECK_URL = "{{ url_for('domains.check_domain_json') }}";
+
+  const DOMAIN_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})+$/i;
+
+  const rowState = new Map(); // rowId -> "idle" | "checking" | "available" | "unavailable" | "invalid"
+  let rowCounter = 0;
+
+  function updateDeployButton() {
+    const rows = domainInputsEl.querySelectorAll(".domain-row");
+    const quantity = parseInt(quantityInput.value, 10) || 0;
+    const filled = Array.from(rows).filter((r) => r.querySelector("input").value.trim());
+    const allAvailable = rows.length > 0 && Array.from(rows).every((r) => rowState.get(r.dataset.rowId) === "available");
+    deployBtn.disabled = !(rows.length === quantity && filled.length === quantity && allAvailable);
+  }
+
+  function setRowStatus(row, status, message) {
+    rowState.set(row.dataset.rowId, status);
+    const statusEl = row.querySelector(".domain-status");
+    const input = row.querySelector("input");
+    input.classList.remove("border-emerald-600", "border-red-600");
+    switch (status) {
+      case "checking":
+        statusEl.textContent = "verificando…";
+        statusEl.className = "domain-status text-xs text-zinc-400 whitespace-nowrap";
+        break;
+      case "available":
+        statusEl.textContent = "✓ disponível";
+        statusEl.className = "domain-status text-xs text-emerald-400 whitespace-nowrap";
+        input.classList.add("border-emerald-600");
+        break;
+      case "unavailable":
+        statusEl.textContent = message || "✗ indisponível";
+        statusEl.className = "domain-status text-xs text-red-400 whitespace-nowrap";
+        input.classList.add("border-red-600");
+        break;
+      case "invalid":
+        statusEl.textContent = "formato inválido";
+        statusEl.className = "domain-status text-xs text-amber-400 whitespace-nowrap";
+        break;
+      default:
+        statusEl.textContent = "";
+        statusEl.className = "domain-status text-xs text-zinc-500 whitespace-nowrap";
+    }
+    updateDeployButton();
+  }
+
+  async function checkRow(row) {
+    const input = row.querySelector("input");
+    const name = input.value.trim().toLowerCase();
+
+    if (!name) {
+      setRowStatus(row, "idle");
+      return;
+    }
+    if (!DOMAIN_RE.test(name)) {
+      setRowStatus(row, "invalid");
+      return;
+    }
+    const credentialId = registrarSelect.value;
+    if (!credentialId) {
+      setRowStatus(row, "idle");
+      return;
+    }
+
+    setRowStatus(row, "checking");
+    try {
+      const res = await fetch(CHECK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ name, credential_id: credentialId }),
+      });
+      const data = await res.json();
+      if (input.value.trim().toLowerCase() !== name) return; // stale response, input changed since
+      if (!data.ok) {
+        setRowStatus(row, "unavailable", data.message || "Erro ao verificar.");
+        return;
+      }
+      setRowStatus(row, data.available ? "available" : "unavailable");
+    } catch (err) {
+      if (input.value.trim().toLowerCase() !== name) return;
+      setRowStatus(row, "unavailable", "Erro ao verificar.");
+    }
+  }
+
+  function scheduleCheck(row) {
+    clearTimeout(row._debounce);
+    row._debounce = setTimeout(() => checkRow(row), 500);
+  }
+
+  function createRow(index, value) {
+    rowCounter += 1;
+    const rowId = `row-${rowCounter}`;
+    const row = document.createElement("div");
+    row.className = "domain-row flex items-center gap-2";
+    row.dataset.rowId = rowId;
+    row.innerHTML = `
+      <input class="input flex-1" type="text" name="domains" placeholder="meusite${index + 1}.com" value="${value || ""}" required>
+      <span class="domain-status text-xs text-zinc-500 whitespace-nowrap"></span>
+    `;
+    const input = row.querySelector("input");
+    input.addEventListener("input", () => {
+      setRowStatus(row, "idle");
+      scheduleCheck(row);
+    });
+    domainInputsEl.appendChild(row);
+    rowState.set(rowId, "idle");
+    if (value && DOMAIN_RE.test(value)) {
+      scheduleCheck(row);
+    }
+    return row;
+  }
+
+  function renderRows() {
+    let quantity = parseInt(quantityInput.value, 10) || 0;
+    if (quantity < 1) quantity = 1;
+
+    const existingRows = Array.from(domainInputsEl.querySelectorAll(".domain-row"));
+    const existingValues = existingRows.map((r) => r.querySelector("input").value);
+
+    domainInputsEl.innerHTML = "";
+    rowState.clear();
+
+    for (let i = 0; i < quantity; i++) {
+      createRow(i, existingValues[i]);
+    }
+    updateDeployButton();
+  }
+
+  quantityInput.addEventListener("input", renderRows);
+  registrarSelect.addEventListener("change", () => {
+    domainInputsEl.querySelectorAll(".domain-row").forEach((row) => scheduleCheck(row));
+  });
+
+  renderRows();
+</script>
+{% endif %}
 {% endblock %}

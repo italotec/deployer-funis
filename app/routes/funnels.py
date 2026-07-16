@@ -37,7 +37,6 @@ def deploy_funnel(funnel_id):
     vps_id = request.form.get("vps_id", type=int)
     registrar_credential_id = request.form.get("registrar_credential_id", type=int)
     quantity = request.form.get("quantity", type=int) or 0
-    domains_raw = request.form.get("domains", "")
 
     vps = Vps.query.filter_by(id=vps_id, user_id=current_user.id, status="ready").first()
     if not vps:
@@ -51,9 +50,9 @@ def deploy_funnel(funnel_id):
         flash("Selecione uma credencial de registrador válida.", "error")
         return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
 
-    names = [n.strip().lower() for n in domains_raw.splitlines() if n.strip()]
+    names = [n.strip().lower() for n in request.form.getlist("domains") if n.strip()]
     if quantity < 1 or len(names) != quantity:
-        flash(f"Informe exatamente {quantity or 'a'} domínio(s), um por linha, igual à quantidade escolhida.", "error")
+        flash(f"Informe exatamente {quantity or 'a'} domínio(s), igual à quantidade escolhida.", "error")
         return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
 
     batch = DeployBatch(user_id=current_user.id, funnel_id=funnel.id, vps_id=vps.id, quantity=quantity, status="queued")

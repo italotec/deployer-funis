@@ -63,10 +63,17 @@ def configure_nginx(vps, funnel, domain_name: str, webroot: str, log=lambda msg:
     return deploy_site_conf(vps, domain_name, conf_text, log=log)
 
 
+_FORBIDDEN_LE_EMAIL_DOMAINS = ("example.com", "example.net", "example.org")
+
+
 def issue_ssl(vps, domain_name: str, le_email: str, log=lambda msg: None):
     if vps.provider == "mock":
         log("Modo mock: pulando emissão real de certificado SSL.")
         return
+    if not le_email or le_email.split("@")[-1].lower() in _FORBIDDEN_LE_EMAIL_DOMAINS:
+        raise RuntimeError(
+            "Configure um e-mail válido em LE_EMAIL — o Let's Encrypt recusa endereços vazios ou @example.com/.net/.org."
+        )
     log("Emitindo certificado SSL (Let's Encrypt)...")
     session = get_ssh_session(vps)
     session.connect()

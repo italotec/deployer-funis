@@ -21,10 +21,17 @@ def append_deploy_log(app, deployment_id, msg):
         f.write(msg.rstrip("\n") + "\n")
 
 
+def reset_deploy_log(app, deployment_id):
+    os.makedirs(app.config["DEPLOY_LOGS_DIR"], exist_ok=True)
+    open(_deploy_log_path(app, deployment_id), "w", encoding="utf-8").close()
+
+
 def _run_single_deployment(app, deployment_id: int) -> bool:
     dep = db.session.get(Deployment, deployment_id)
     if not dep:
         return False
+
+    reset_deploy_log(app, deployment_id)
 
     domain = db.session.get(Domain, dep.domain_id)
     vps = db.session.get(Vps, dep.vps_id)
@@ -147,6 +154,10 @@ def start_teardown_deployment_job(deployment_id: int):
                 db.session.delete(dep)
                 db.session.commit()
 
+            log_path = _deploy_log_path(app, deployment_id)
+            if os.path.exists(log_path):
+                os.remove(log_path)
+
     threading.Thread(target=runner, daemon=True).start()
 
 
@@ -162,6 +173,7 @@ def start_vps_purchase_job(vps_id: int):
             vps = db.session.get(Vps, vps_id)
             if not vps:
                 return
+            reset_deploy_log(app, f"vps-{vps.id}")
             try:
                 cred = db.session.get(ProviderCredential, vps.credential_id) if vps.credential_id else None
                 secret = cred.get_secret() if cred else {}
@@ -218,6 +230,7 @@ def start_manual_vps_bootstrap_job(vps_id: int):
             vps = db.session.get(Vps, vps_id)
             if not vps:
                 return
+            reset_deploy_log(app, f"vps-{vps.id}")
             try:
                 vps.last_message = "Instalando nginx e certbot..."
                 db.session.commit()

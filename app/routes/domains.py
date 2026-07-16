@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 
 from .. import db
@@ -32,6 +32,22 @@ def check_domain():
     except Exception as exc:
         flash(f"Erro ao verificar domínio: {exc}", "error")
     return redirect(url_for("domains.domains_page"))
+
+
+@bp.route("/verificar-json", methods=["POST"])
+@login_required
+def check_domain_json():
+    name = request.form.get("name", "").strip().lower()
+    credential_id = request.form.get("credential_id", type=int)
+    cred = ProviderCredential.query.filter_by(id=credential_id, user_id=current_user.id, kind="registrar").first()
+    if not cred or not name:
+        return jsonify({"ok": False, "message": "Domínio ou credencial inválidos."}), 400
+    try:
+        provider = get_registrar_provider(cred.provider, cred.get_secret())
+        available = provider.check_availability(name)
+        return jsonify({"ok": True, "available": available, "name": name})
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)})
 
 
 @bp.route("/registrar", methods=["POST"])

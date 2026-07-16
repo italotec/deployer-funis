@@ -1,4 +1,5 @@
 import json
+import re
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
@@ -32,21 +33,44 @@ def credentials_page():
     )
 
 
-@bp.route("/nova", methods=["POST"])
-@login_required
-def create_credential():
+_PHONE_RE = re.compile(r"^\+\d{1,3}\.\d{4,14}$")
+
+
+def _normalize_phone(raw: str) -> str:
+    """Reformat a registrant phone into registrar-required '+CC.NUMBER' shape.
+
+    Registrars like Namecheap reject anything that isn't exactly '+<country
+    code>.<number>'. Users tend to paste digits-only numbers, so assume the
+    first 2 digits are the country code when no explicit '+'/'.' split is
+    given. Leaves already-valid values untouched.
+    """
+    raw = raw.strip()
+    if not raw or _PHONE_RE.match(raw):
+        return raw
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) < 8:
+        return raw
+    return f"+{digits[:2]}.{digits[2:]}"
+
+
+def _parse_credential_form():
+    """Validate kind/provider and rebuild the secret dict from the submitted form.
+
+    Returns (kind, provider, label, secret) on success, or (None, None, None, None)
+    with a flash message already set on validation failure.
+    """
     kind = request.form.get("kind", "").strip()
     provider = request.form.get("provider", "").strip()
     label = request.form.get("label", "").strip()
 
     if kind not in ("vps", "registrar"):
         flash("Tipo de credencial inválido.", "error")
-        return redirect(url_for("credentials.credentials_page"))
+        return None, None, None, None
 
     valid_providers = list_vps_providers() if kind == "vps" else list_registrar_providers()
     if provider not in valid_providers:
         flash("Provedor inválido.", "error")
-        return redirect(url_for("credentials.credentials_page"))
+        return None, None, None, None
 
     # Collect provider-specific secret fields submitted by the form (secret_<field>=value)
     secret = {}
@@ -58,9 +82,19 @@ def create_credential():
     for field in ("first_name", "last_name", "address1", "city", "state", "postal_code", "country", "phone", "email"):
         v = request.form.get(f"contact_{field}", "").strip()
         if v:
-            contact[field] = v
+            contact[field] = _normalize_phone(v) if field == "phone" else v
     if contact:
         secret["contact"] = contact
+
+    return kind, provider, label, secret
+
+
+@bp.route("/nova", methods=["POST"])
+@login_required
+def create_credential():
+    kind, provider, label, secret = _parse_credential_form()
+    if kind is None:
+        return redirect(url_for("credentials.credentials_page"))
 
     cred = ProviderCredential(user_id=current_user.id, kind=kind, provider=provider, label=label or provider)
     cred.set_secret(secret)
@@ -68,6 +102,49 @@ def create_credential():
     db.session.commit()
 
     flash("Credencial salva.", "success")
+    return redirect(url_for("credentials.credentials_page"))
+
+
+@bp.route("/<int:cred_id>/dados", methods=["GET"])
+@login_required
+def credential_data(cred_id):
+    cred = ProviderCredential.query.filter_by(id=cred_id, user_id=current_user.id).first_or_404()
+    secret = cred.get_secret()
+    contact = secret.pop("contact", {})
+    return jsonify({
+        "id": cred.id,
+        "kind": cred.kind,
+        "provider": cred.provider,
+        "label": cred.label,
+        "secret": secret,
+        "contact": contact,
+    })
+
+
+@bp.route("/<int:cred_id>/editar", methods=["POST"])
+@login_required
+def edit_credential(cred_id):
+    cred = ProviderCredential.query.filter_by(id=cred_id, user_id=current_user.id).first_or_404()
+
+    kind, provider, label, secret = _parse_credential_form()
+    if kind is None:
+        return redirect(url_for("credentials.credentials_page"))
+
+    # Merge onto the existing secret (when kind/provider are unchanged) so a field left
+    # blank on the edit form keeps its previous value instead of being silently erased.
+    existing = cred.get_secret() if (kind == cred.kind and provider == cred.provider) else {}
+    merged_contact = {**existing.pop("contact", {}), **secret.pop("contact", {})}
+    merged_secret = {**existing, **secret}
+    if merged_contact:
+        merged_secret["contact"] = merged_contact
+
+    cred.kind = kind
+    cred.provider = provider
+    cred.label = label or provider
+    cred.set_secret(merged_secret)
+    db.session.commit()
+
+    flash("Credencial atualizada.", "success")
     return redirect(url_for("credentials.credentials_page"))
 
 

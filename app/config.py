@@ -27,7 +27,7 @@ class Config:
     FERNET_KEY = os.getenv("FERNET_KEY", "")
 
     # Let's Encrypt registration email (certbot --non-interactive -m <email>)
-    LE_EMAIL = os.getenv("LE_EMAIL", "admin@example.com")
+    LE_EMAIL = os.getenv("LE_EMAIL", "")
 
     FUNNELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "funnels")
     DEPLOY_LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "deploy_logs")

@@ -47,14 +47,22 @@ class SSHSession:
             raise RuntimeError(f"Comando falhou ({exit_code}): {command}\n{(err or out).strip()}")
         return out
 
-    def write_file(self, remote_path: str, content: str):
+    def _open_sftp(self, stall_timeout: int = 60):
+        """Opens SFTP with a stall timeout — without it, a stalled transfer (dropped
+        connection, unresponsive VPS) blocks the deploy thread forever with no exception,
+        leaving the deployment stuck mid-status with nothing to mark it as failed."""
         sftp = self._client.open_sftp()
+        sftp.get_channel().settimeout(stall_timeout)
+        return sftp
+
+    def write_file(self, remote_path: str, content: str):
+        sftp = self._open_sftp()
         with sftp.open(remote_path, "w") as f:
             f.write(content)
         sftp.close()
 
     def upload_dir(self, local_dir: str, remote_dir: str):
-        sftp = self._client.open_sftp()
+        sftp = self._open_sftp()
         self.run(f"mkdir -p {remote_dir}")
         for root, dirs, files in os.walk(local_dir):
             rel = os.path.relpath(root, local_dir)
