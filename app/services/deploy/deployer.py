@@ -51,6 +51,13 @@ def upload_funnel(vps, funnel, funnels_dir: str, domain_name: str, log=lambda ms
     session.connect()
     try:
         session.upload_dir(local_dir, webroot)
+        if funnel.has_php:
+            # Files are uploaded over SFTP as root, so they land root:root. php-fpm runs
+            # as www-data and the funnel writes to SQLite DBs, logs/ and cache dirs at
+            # runtime — without giving www-data ownership, the first write 500s.
+            session.run(f"chown -R www-data:www-data {webroot}")
+            session.run(f"find {webroot} -type d -exec chmod 775 {{}} +")
+            session.run(f"find {webroot} -type f -exec chmod 664 {{}} +")
     finally:
         session.close()
     return webroot

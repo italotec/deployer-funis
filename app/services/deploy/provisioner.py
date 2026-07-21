@@ -10,7 +10,10 @@ BOOTSTRAP_CMD = (
 PHP_CMD = (
     "export DEBIAN_FRONTEND=noninteractive && "
     "apt-get update -y && "
-    "apt-get install -y php-fpm && "
+    # php-fpm alone ships without the SQLite PDO driver (funnels store config, rate
+    # limits and PIX transactions in SQLite) nor curl (PIX gateway calls) — without
+    # these, every DB/gateway call throws and PHP returns a bare HTTP 500.
+    "apt-get install -y php-fpm php-sqlite3 php-curl php-mbstring && "
     "systemctl enable 'php*-fpm' 2>/dev/null || true"
 )
 
