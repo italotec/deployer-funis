@@ -32,3 +32,12 @@ class RegistrarProvider(ABC):
     def set_dns_a(self, domain: str, ip_address: str) -> None:
         """Point the domain's A record (root + www) at ip_address."""
         ...
+
+    def get_status(self, domain: str) -> str:
+        """Provider-side status of a domain already ordered on this account.
+
+        Synchronous registrars own the domain the moment register() returns, so the
+        default reports it active. Registrars that register asynchronously (e.g. Njalla,
+        where register() only returns a task id) override this so callers can poll until
+        the registration lands before editing DNS."""
+        return "active"

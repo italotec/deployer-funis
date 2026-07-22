@@ -36,12 +36,26 @@
             {% endfor %}
           </select>
         </div>
+        {% if owned_domains %}
         <div>
-          <label class="text-xs text-zinc-400">Quantidade de domínios</label>
-          <input class="input" type="number" name="quantity" id="quantity-input" min="1" value="1" required>
+          <label class="text-xs text-zinc-400">Domínios que já possuo</label>
+          <div class="space-y-1 mt-1">
+            {% for d in owned_domains %}
+              <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" class="owned-domain-checkbox" name="domains" value="{{ d.name }}">
+                <span>{{ d.name }}</span>
+                <span class="text-xs text-emerald-400 whitespace-nowrap">já é seu</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        <div>
+          <label class="text-xs text-zinc-400">Quantidade de domínios novos</label>
+          <input class="input" type="number" name="quantity" id="quantity-input" min="0" value="0" required>
         </div>
         <div>
-          <label class="text-xs text-zinc-400">Domínios</label>
+          <label class="text-xs text-zinc-400">Novos domínios</label>
           <div id="domain-inputs" class="space-y-2 mt-1"></div>
         </div>
         <button class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center" type="submit" id="deploy-btn" disabled>Implantar</button>
@@ -63,12 +77,18 @@
   const rowState = new Map(); // rowId -> "idle" | "checking" | "available" | "unavailable" | "invalid"
   let rowCounter = 0;
 
+  function ownedCheckedCount() {
+    return document.querySelectorAll(".owned-domain-checkbox:checked").length;
+  }
+
   function updateDeployButton() {
     const rows = domainInputsEl.querySelectorAll(".domain-row");
     const quantity = parseInt(quantityInput.value, 10) || 0;
     const filled = Array.from(rows).filter((r) => r.querySelector("input").value.trim());
-    const allAvailable = rows.length > 0 && Array.from(rows).every((r) => rowState.get(r.dataset.rowId) === "available");
-    deployBtn.disabled = !(rows.length === quantity && filled.length === quantity && allAvailable);
+    const allAvailable = rows.length === 0 || Array.from(rows).every((r) => rowState.get(r.dataset.rowId) === "available");
+    const newRowsOk = rows.length === quantity && filled.length === quantity && allAvailable;
+    const totalSelected = ownedCheckedCount() + rows.length;
+    deployBtn.disabled = !(newRowsOk && totalSelected >= 1);
   }
 
   function setRowStatus(row, status, message) {
@@ -170,7 +190,7 @@
 
   function renderRows() {
     let quantity = parseInt(quantityInput.value, 10) || 0;
-    if (quantity < 1) quantity = 1;
+    if (quantity < 0) quantity = 0;
 
     const existingRows = Array.from(domainInputsEl.querySelectorAll(".domain-row"));
     const existingValues = existingRows.map((r) => r.querySelector("input").value);
@@ -187,6 +207,9 @@
   quantityInput.addEventListener("input", renderRows);
   registrarSelect.addEventListener("change", () => {
     domainInputsEl.querySelectorAll(".domain-row").forEach((row) => scheduleCheck(row));
+  });
+  document.querySelectorAll(".owned-domain-checkbox").forEach((cb) => {
+    cb.addEventListener("change", updateDeployButton);
   });
 
   renderRows();

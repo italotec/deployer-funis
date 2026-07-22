@@ -27,6 +27,31 @@ def register_domain(domain, registrar_provider, log=lambda msg: None) -> str:
     return registrar_provider.register(domain.name)
 
 
+_DOMAIN_READY_STATUSES = {"active"}
+
+
+def wait_domain_registered(domain, registrar_provider, log=lambda msg: None,
+                           attempts: int = 60, delay: int = 10):
+    """Wait until the domain is actually owned by the account before touching DNS.
+
+    Some registrars (Njalla) register asynchronously: register() returns a task id and
+    the domain isn't usable yet — DNS edits are rejected with 'Permission denied' until
+    the registration task completes. Poll get_status() until the domain reports ready.
+    Synchronous registrars report 'active' immediately, so this returns on the first
+    iteration for them. Status lookups may raise while the domain is still pending (it
+    isn't in the account yet), so those are treated as 'not ready' and retried."""
+    for _ in range(attempts):
+        try:
+            status = (registrar_provider.get_status(domain.name) or "").lower()
+        except Exception:
+            status = ""
+        if status in _DOMAIN_READY_STATUSES:
+            return
+        log("Aguardando confirmação do registro do domínio...")
+        time.sleep(delay)
+    log("Aviso: registro do domínio ainda não confirmado — prosseguindo mesmo assim.")
+
+
 def set_dns(domain, vps, registrar_provider, log=lambda msg: None):
     log(f"Apontando DNS de {domain.name} para {vps.ip_address}...")
     registrar_provider.set_dns_a(domain.name, vps.ip_address)

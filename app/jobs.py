@@ -57,6 +57,8 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
             db.session.commit()
             order_id = deployer.register_domain(domain, registrar_provider, log=log)
             domain.registrar_order_id = order_id or domain.registrar_order_id
+            db.session.commit()
+            deployer.wait_domain_registered(domain, registrar_provider, log=log)
             domain.status = "registered"
             db.session.commit()
 
@@ -88,6 +90,7 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
         dep.live_url = f"https://{domain.name}"
         dep.last_message = "Live."
         db.session.commit()
+        log(f"Deploy concluído: {dep.live_url}")
         return True
     except Exception as exc:
         db.session.rollback()

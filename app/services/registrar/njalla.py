@@ -52,9 +52,19 @@ class NjallaProvider(RegistrarProvider):
         # completion is confirmed by polling get_status() (get-domain) from the caller.
         return str(result.get("task", ""))
 
+    def _upsert_a_record(self, domain: str, name: str, ip_address: str, ttl: int = 10800) -> None:
+        existing = self._call("list-records", {"domain": domain}).get("records", [])
+        match = next((r for r in existing if r.get("type") == "A" and r.get("name") == name), None)
+        if match is None:
+            self._call("add-record", {"domain": domain, "type": "A", "name": name, "content": ip_address, "ttl": ttl})
+        elif match.get("content") != ip_address:
+            self._call("edit-record", {"domain": domain, "id": match["id"], "type": "A", "name": name, "content": ip_address, "ttl": ttl})
+
     def set_dns_a(self, domain: str, ip_address: str) -> None:
-        self._call("add-record", {"domain": domain, "type": "A", "name": "@", "content": ip_address, "ttl": 10800})
-        self._call("add-record", {"domain": domain, "type": "A", "name": "www", "content": ip_address, "ttl": 10800})
+        # add-record is not idempotent — redeploying a domain that already has A records
+        # (e.g. a deploy that failed after DNS was set) would otherwise create duplicates.
+        self._upsert_a_record(domain, "@", ip_address)
+        self._upsert_a_record(domain, "www", ip_address)
 
     def get_status(self, domain: str) -> str:
         result = self._call("get-domain", {"domain": domain})
