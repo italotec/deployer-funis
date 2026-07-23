@@ -21,15 +21,22 @@ def funnel_detail(funnel_id):
     vpses = Vps.query.filter_by(user_id=current_user.id, status="ready").order_by(Vps.created_at.desc()).all()
     registrar_creds = ProviderCredential.query.filter_by(user_id=current_user.id, kind="registrar").order_by(ProviderCredential.label).all()
 
-    live_domain_ids = {
-        d.domain_id for d in Deployment.query.filter_by(user_id=current_user.id, status="live").all()
-    }
-    owned_domains = [
-        d for d in Domain.query.filter_by(user_id=current_user.id)
-        .filter(Domain.status.in_(("registered", "dns_set")))
-        .order_by(Domain.name).all()
-        if d.id not in live_domain_ids
-    ]
+    live_deployment_by_domain = {}
+    for dep in Deployment.query.filter_by(user_id=current_user.id, status="live").all():
+        live_deployment_by_domain[dep.domain_id] = dep
+
+    owned_domains = []
+    for d in Domain.query.filter_by(user_id=current_user.id).order_by(Domain.name).all():
+        live_dep = live_deployment_by_domain.get(d.id)
+        if live_dep:
+            label = f'em uso por "{live_dep.funnel.name}"'
+        elif d.status == "registering":
+            label = "registrando…"
+        elif d.status == "error":
+            label = f"erro: {d.last_message}" if d.last_message else "erro"
+        else:
+            label = "pronto"
+        owned_domains.append({"domain": d, "in_use": live_dep is not None, "label": label})
 
     return render_template(
         "funnel_detail.html",
@@ -54,12 +61,14 @@ def deploy_funnel(funnel_id):
         flash("Selecione um VPS válido (status 'ready').", "error")
         return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
 
-    registrar_cred = ProviderCredential.query.filter_by(
-        id=registrar_credential_id, user_id=current_user.id, kind="registrar"
-    ).first()
-    if not registrar_cred:
-        flash("Selecione uma credencial de registrador válida.", "error")
-        return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
+    registrar_cred = None
+    if registrar_credential_id:
+        registrar_cred = ProviderCredential.query.filter_by(
+            id=registrar_credential_id, user_id=current_user.id, kind="registrar"
+        ).first()
+        if not registrar_cred:
+            flash("Selecione uma credencial de registrador válida.", "error")
+            return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
 
     seen = set()
     names = []
@@ -73,12 +82,23 @@ def deploy_funnel(funnel_id):
         flash("Selecione ao menos um domínio (já seu ou novo).", "error")
         return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
 
+    existing_by_name = {
+        d.name: d for d in Domain.query.filter_by(user_id=current_user.id).filter(Domain.name.in_(names)).all()
+    }
+    new_names = [n for n in names if n not in existing_by_name]
+    if new_names and not registrar_cred:
+        flash(
+            "Selecione um registrador para registrar os novos domínios: " + ", ".join(new_names),
+            "error",
+        )
+        return redirect(url_for("funnels.funnel_detail", funnel_id=funnel_id))
+
     batch = DeployBatch(user_id=current_user.id, funnel_id=funnel.id, vps_id=vps.id, quantity=len(names), status="queued")
     db.session.add(batch)
     db.session.flush()
 
     for name in names:
-        domain = Domain.query.filter_by(user_id=current_user.id, name=name).first()
+        domain = existing_by_name.get(name)
         if not domain:
             domain = Domain(user_id=current_user.id, registrar=registrar_cred.provider, name=name, status="registering")
             db.session.add(domain)

@@ -14,9 +14,10 @@
       <div class="text-sm text-zinc-500">
         Você precisa de um <a href="{{ url_for('vps.vps_page') }}" class="text-cyan-400 hover:underline">VPS pronto</a> para implantar.
       </div>
-    {% elif not registrar_creds %}
+    {% elif not registrar_creds and not owned_domains %}
       <div class="text-sm text-zinc-500">
-        Cadastre uma <a href="{{ url_for('credentials.credentials_page') }}" class="text-cyan-400 hover:underline">credencial de registrador</a> primeiro.
+        Cadastre uma <a href="{{ url_for('credentials.credentials_page') }}" class="text-cyan-400 hover:underline">credencial de registrador</a>
+        para registrar domínios novos, ou adicione um <a href="{{ url_for('domains.domains_page') }}" class="text-cyan-400 hover:underline">domínio externo</a> primeiro.
       </div>
     {% else %}
       <form method="post" action="{{ url_for('funnels.deploy_funnel', funnel_id=funnel.id) }}" class="space-y-3">
@@ -28,6 +29,45 @@
             {% endfor %}
           </select>
         </div>
+
+        {% if owned_domains %}
+        <div>
+          <label class="text-xs text-zinc-400">Domínios que já possuo</label>
+          <button type="button" id="open-owned-modal-btn" class="input text-left flex items-center justify-between w-full">
+            <span><span id="owned-count">0</span> selecionado(s) — clique para escolher</span>
+            <span class="text-zinc-500">▾</span>
+          </button>
+
+          <div id="owned-domains-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div class="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-md max-h-[80vh] flex flex-col">
+              <div class="p-4 border-b border-zinc-800">
+                <div class="font-semibold mb-2">Domínios que já possuo</div>
+                <input type="text" id="owned-domains-search" class="input" placeholder="Buscar domínio...">
+              </div>
+              <div id="owned-domains-list" class="overflow-y-auto p-4 space-y-1 flex-1">
+                {% for item in owned_domains %}
+                  <label class="owned-domain-row flex items-center gap-2 text-sm py-1" data-name="{{ item.domain.name|lower }}">
+                    <input type="checkbox" class="owned-domain-checkbox" name="domains" value="{{ item.domain.name }}">
+                    <span class="flex-1">{{ item.domain.name }}{% if item.domain.registrar == "manual" %} <span class="text-zinc-500">(externo)</span>{% endif %}</span>
+                    <span class="text-xs whitespace-nowrap
+                      {% if item.in_use %} text-amber-400
+                      {% elif item.domain.status == 'error' %} text-red-400
+                      {% elif item.domain.status == 'registering' %} text-zinc-400
+                      {% else %} text-emerald-400 {% endif %}">
+                      {{ item.label }}
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+              <div class="p-4 border-t border-zinc-800">
+                <button type="button" id="close-owned-modal-btn" class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center">Concluído</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if registrar_creds %}
         <div>
           <label class="text-xs text-zinc-400">Registrador (para domínios novos)</label>
           <select name="registrar_credential_id" id="registrar-select" class="input" required>
@@ -36,20 +76,6 @@
             {% endfor %}
           </select>
         </div>
-        {% if owned_domains %}
-        <div>
-          <label class="text-xs text-zinc-400">Domínios que já possuo</label>
-          <div class="space-y-1 mt-1">
-            {% for d in owned_domains %}
-              <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" class="owned-domain-checkbox" name="domains" value="{{ d.name }}">
-                <span>{{ d.name }}</span>
-                <span class="text-xs text-emerald-400 whitespace-nowrap">já é seu</span>
-              </label>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
         <div>
           <label class="text-xs text-zinc-400">Quantidade de domínios novos</label>
           <input class="input" type="number" name="quantity" id="quantity-input" min="0" value="0" required>
@@ -58,13 +84,15 @@
           <label class="text-xs text-zinc-400">Novos domínios</label>
           <div id="domain-inputs" class="space-y-2 mt-1"></div>
         </div>
+        {% endif %}
+
         <button class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center" type="submit" id="deploy-btn" disabled>Implantar</button>
       </form>
     {% endif %}
   </div>
 </div>
 
-{% if vpses and registrar_creds %}
+{% if vpses and (registrar_creds or owned_domains) %}
 <script>
   const quantityInput = document.getElementById("quantity-input");
   const domainInputsEl = document.getElementById("domain-inputs");
@@ -82,13 +110,16 @@
   }
 
   function updateDeployButton() {
-    const rows = domainInputsEl.querySelectorAll(".domain-row");
-    const quantity = parseInt(quantityInput.value, 10) || 0;
+    const rows = domainInputsEl ? domainInputsEl.querySelectorAll(".domain-row") : [];
+    const quantity = quantityInput ? (parseInt(quantityInput.value, 10) || 0) : 0;
     const filled = Array.from(rows).filter((r) => r.querySelector("input").value.trim());
     const allAvailable = rows.length === 0 || Array.from(rows).every((r) => rowState.get(r.dataset.rowId) === "available");
     const newRowsOk = rows.length === quantity && filled.length === quantity && allAvailable;
     const totalSelected = ownedCheckedCount() + rows.length;
     deployBtn.disabled = !(newRowsOk && totalSelected >= 1);
+
+    const ownedCountEl = document.getElementById("owned-count");
+    if (ownedCountEl) ownedCountEl.textContent = ownedCheckedCount();
   }
 
   function setRowStatus(row, status, message) {
@@ -134,7 +165,7 @@
       setRowStatus(row, "invalid");
       return;
     }
-    const credentialId = registrarSelect.value;
+    const credentialId = registrarSelect ? registrarSelect.value : null;
     if (!credentialId) {
       setRowStatus(row, "idle");
       return;
@@ -189,6 +220,10 @@
   }
 
   function renderRows() {
+    if (!quantityInput || !domainInputsEl) {
+      updateDeployButton();
+      return;
+    }
     let quantity = parseInt(quantityInput.value, 10) || 0;
     if (quantity < 0) quantity = 0;
 
@@ -204,13 +239,40 @@
     updateDeployButton();
   }
 
-  quantityInput.addEventListener("input", renderRows);
-  registrarSelect.addEventListener("change", () => {
-    domainInputsEl.querySelectorAll(".domain-row").forEach((row) => scheduleCheck(row));
-  });
+  if (quantityInput) quantityInput.addEventListener("input", renderRows);
+  if (registrarSelect) {
+    registrarSelect.addEventListener("change", () => {
+      if (domainInputsEl) domainInputsEl.querySelectorAll(".domain-row").forEach((row) => scheduleCheck(row));
+    });
+  }
   document.querySelectorAll(".owned-domain-checkbox").forEach((cb) => {
     cb.addEventListener("change", updateDeployButton);
   });
+
+  const openModalBtn = document.getElementById("open-owned-modal-btn");
+  const modal = document.getElementById("owned-domains-modal");
+  const closeModalBtn = document.getElementById("close-owned-modal-btn");
+  const searchInput = document.getElementById("owned-domains-search");
+
+  if (openModalBtn && modal) {
+    openModalBtn.addEventListener("click", () => modal.classList.remove("hidden"));
+  }
+  if (closeModalBtn && modal) {
+    closeModalBtn.addEventListener("click", () => modal.classList.add("hidden"));
+  }
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+  }
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      const q = searchInput.value.trim().toLowerCase();
+      document.querySelectorAll(".owned-domain-row").forEach((row) => {
+        row.style.display = row.dataset.name.includes(q) ? "" : "none";
+      });
+    });
+  }
 
   renderRows();
 </script>

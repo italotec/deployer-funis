@@ -45,12 +45,15 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
             db.session.commit()
 
     try:
-        cred = ProviderCredential.query.filter_by(
-            user_id=dep.user_id, kind="registrar", provider=domain.registrar
-        ).first()
-        if not cred:
-            raise RuntimeError(f"Nenhuma credencial cadastrada para o registrador '{domain.registrar}'.")
-        registrar_provider = get_registrar_provider(domain.registrar, cred.get_secret())
+        if domain.registrar == "manual":
+            registrar_provider = get_registrar_provider("manual", {})
+        else:
+            cred = ProviderCredential.query.filter_by(
+                user_id=dep.user_id, kind="registrar", provider=domain.registrar
+            ).first()
+            if not cred:
+                raise RuntimeError(f"Nenhuma credencial cadastrada para o registrador '{domain.registrar}'.")
+            registrar_provider = get_registrar_provider(domain.registrar, cred.get_secret())
 
         if domain.status == "registering":
             dep.status = "registering_domain"

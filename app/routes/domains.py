@@ -50,6 +50,32 @@ def check_domain_json():
         return jsonify({"ok": False, "message": str(exc)})
 
 
+@bp.route("/externo", methods=["POST"])
+@login_required
+def add_manual_domain():
+    name = request.form.get("name", "").strip().lower()
+    if not name:
+        flash("Informe o domínio.", "error")
+        return redirect(url_for("domains.domains_page"))
+
+    if Domain.query.filter_by(user_id=current_user.id, name=name).first():
+        flash("Você já tem esse domínio cadastrado.", "error")
+        return redirect(url_for("domains.domains_page"))
+
+    domain = Domain(
+        user_id=current_user.id,
+        registrar="manual",
+        name=name,
+        status="registered",
+        last_message="Domínio externo — aponte o registro DNS tipo A para o IP do VPS de destino.",
+    )
+    db.session.add(domain)
+    db.session.commit()
+
+    flash(f"{name} adicionado. Aponte o DNS dele para o IP do VPS de destino ao implantar.", "success")
+    return redirect(url_for("domains.domains_page"))
+
+
 @bp.route("/registrar", methods=["POST"])
 @login_required
 def register_domain():
