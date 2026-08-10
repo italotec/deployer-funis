@@ -32,4 +32,6 @@ class Config:
     FUNNELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "funnels")
     DEPLOY_LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "deploy_logs")
 
-    MAX_CONTENT_LENGTH = 200 * 1024 * 1024  # 200MB max funnel zip upload
+    # Max funnel zip upload. Must stay <= the nginx client_max_body_size of the
+    # site in front of this app, or nginx rejects the body before Flask sees it.
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "2048")) * 1024 * 1024
