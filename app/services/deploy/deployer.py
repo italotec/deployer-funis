@@ -226,7 +226,7 @@ def start_node_service(vps, funnel, domain_name: str, webroot: str, app_port: in
         unit_name = systemd.unit_name(domain_name)
         log("Parando processo anterior (se existir)...")
         session.run(f"systemctl stop {unit_name} 2>/dev/null || true")
-        session.run(f"pkill -f 'node.*{domain_name}' 2>/dev/null || true")
+        session.run(f"fuser -k {app_port}/tcp 2>/dev/null || true")
         time.sleep(1)
     finally:
         session.close()
