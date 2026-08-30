@@ -13,7 +13,7 @@
         {% for f in funnels %}
           <div class="flex items-center justify-between text-sm border-b border-zinc-800 pb-2 last:border-0 last:pb-0">
             <div>
-              <div class="font-medium">{{ f.name }} {% if f.has_php %}<span class="badge bg-indigo-900 text-indigo-300 ml-1">PHP</span>{% endif %}</div>
+              <div class="font-medium">{{ f.name }} {% if f.stack == 'php' %}<span class="badge bg-indigo-900 text-indigo-300 ml-1">PHP</span>{% elif f.stack == 'node' %}<span class="badge bg-emerald-900 text-emerald-300 ml-1">Node</span>{% endif %}</div>
               <div class="text-xs text-zinc-500">/{{ f.slug }} • {{ f.description or "sem descrição" }}</div>
             </div>
             <div class="flex gap-2">
@@ -44,7 +44,7 @@
         <textarea class="input" name="description" rows="3"></textarea>
       </div>
       <div>
-        <label class="text-xs text-zinc-400">Arquivo .zip (HTML/CSS/JS/PHP)</label>
+        <label class="text-xs text-zinc-400">Arquivo .zip (HTML/CSS/JS/PHP/Node)</label>
         <input class="input" type="file" name="zipfile" accept=".zip" required>
       </div>
       <button class="btn bg-emerald-700 hover:bg-emerald-600 w-full justify-center" type="submit">Enviar</button>

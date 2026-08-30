@@ -10,7 +10,9 @@ login_manager = LoginManager()
 login_manager.login_view = "auth.login_get"
 sock = Sock()
 
-_NON_TERMINAL_DEPLOYMENT_STATUSES = ["queued", "registering_domain", "dns", "uploading", "nginx", "ssl"]
+_NON_TERMINAL_DEPLOYMENT_STATUSES = [
+    "queued", "registering_domain", "dns", "uploading", "installing", "starting", "nginx", "ssl",
+]
 _NON_TERMINAL_BATCH_STATUSES = ["queued", "running"]
 
 
@@ -64,6 +66,19 @@ def create_app():
             db.session.execute(db.text("ALTER TABLE vps ADD COLUMN ssh_port INTEGER NOT NULL DEFAULT 22"))
         if "ssh_password_enc" not in existing_vps_columns:
             db.session.execute(db.text("ALTER TABLE vps ADD COLUMN ssh_password_enc TEXT"))
+        db.session.commit()
+
+        existing_funnel_columns = {row[1] for row in db.session.execute(db.text("PRAGMA table_info(funnel)"))}
+        if "stack" not in existing_funnel_columns:
+            db.session.execute(db.text("ALTER TABLE funnel ADD COLUMN stack VARCHAR(16) NOT NULL DEFAULT 'static'"))
+            db.session.execute(db.text("UPDATE funnel SET stack='php' WHERE has_php=1"))
+        if "app_root" not in existing_funnel_columns:
+            db.session.execute(db.text("ALTER TABLE funnel ADD COLUMN app_root VARCHAR(255) NOT NULL DEFAULT ''"))
+        db.session.commit()
+
+        existing_deployment_columns = {row[1] for row in db.session.execute(db.text("PRAGMA table_info(deployment)"))}
+        if "app_port" not in existing_deployment_columns:
+            db.session.execute(db.text("ALTER TABLE deployment ADD COLUMN app_port INTEGER NOT NULL DEFAULT 0"))
         db.session.commit()
 
         # Recover state left behind by a crash/restart — in-process threads die with

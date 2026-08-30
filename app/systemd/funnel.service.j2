@@ -1,0 +1,16 @@
+[Unit]
+Description=Funil {{ domain }}
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory={{ app_dir }}
+EnvironmentFile={{ app_dir }}/.env
+ExecStart={{ exec_start }}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

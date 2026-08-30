@@ -26,16 +26,56 @@ antes de tentar criar uma instância.
 localmente, envia a pública via `POST /v1/secrets` (`type: "ssh"`) e referencia
 o `secretId` retornado em `sshKeys`. A chave privada fica guardada
 (criptografada com Fernet) em `Vps.ssh_key_enc` para as próximas conexões SSH.
+Se `POST /v1/compute/instances` falhar, o secret recém-criado é removido
+(`DELETE /v1/secrets/{id}`, best-effort) para não acumular chaves órfãs a cada
+tentativa.
+
+O `imageId` do Ubuntu 22.04 é resolvido em tempo real via
+`GET /v1/compute/images` (`_resolve_ubuntu_image_id`), casando pelo nome —
+`DEFAULT_UBUNTU_IMAGE_ID` só é usado como fallback se essa consulta falhar.
+
+## Erros
+
+Toda chamada HTTP passa por `ContaboProvider._request`, que levanta
+`RuntimeError` com a mensagem e o `requestId` retornados pelo corpo da
+resposta da Contabo (`{"message": "...", "requestId": "..."}`), em vez do
+`400 Client Error: Bad Request for url: ...` genérico do
+`requests.raise_for_status()`. Esse `requestId` é o que o suporte da Contabo
+pede para investigar um pedido específico.
+
+## Diagnóstico
+
+`scripts/contabo_check.py` faz só chamadas de leitura (auth, `GET
+/compute/images`, `GET /compute/instances`) usando uma credencial já salva —
+não cria instância nem gasta nada. Útil para confirmar se `DEFAULT_UBUNTU_IMAGE_ID`
+ainda existe no catálogo e se os `productId`/`region` configurados batem com a conta:
+
+```
+python scripts/contabo_check.py [--credential-id N]
+```
+
+## Histórico: catálogo `V91`/`V92`/`V93` descontinuado (2026-08)
+
+A Contabo aposentou a linha antiga de Cloud VPS (`V91`, `V92`, `V93`) para
+**novos pedidos** — `POST /v1/compute/instances` passou a responder `400`
+com `"No offer was found for product ID 'V91' and period '1'"`, mesmo em
+contas que já têm instâncias antigas rodando nesses ids (apenas
+grandfathered; a Contabo continua listando-as em `GET /compute/instances`,
+o que confundia o diagnóstico). O catálogo atual é a série `V153`-`V158`
+("Cloud VPS 4" a "Cloud VPS 18", todas SSD) — já atualizado em `PLANS`.
+Existe também uma linha NVMe "Plus" (`V159`-`V164`) não incluída em `PLANS`
+por ora.
 
 ## Pontos que exigem verificação periódica
 
 A API da Contabo evolui; antes de usar em produção, revalide no painel/documentação oficial:
 
-- **`productId`** (planos): os valores em `PLANS` (`V91`, `V92`, `V93`) podem
-  mudar de nome/disponibilidade por região.
-- **`imageId`** padrão do Ubuntu 22.04 (`DEFAULT_UBUNTU_IMAGE_ID`): se a
-  Contabo descontinuar essa imagem, `create_instance` falhará — nesse caso
-  liste imagens via `GET /v1/compute/images` e atualize a constante.
+- **`productId`** (planos): os valores em `PLANS` podem mudar de
+  nome/disponibilidade por região — a Contabo já fez isso ao menos uma vez
+  (ver histórico acima). Não há endpoint de leitura para listar todos os
+  productId/period vendáveis sem já ter uma instância; a única forma
+  confiável de validar é tentar `POST /compute/instances` (o que compra) ou
+  conferir a documentação/painel oficial.
 - **Regiões** (`REGIONS`): confirme a lista atual de regiões disponíveis para
   a conta do usuário.
 

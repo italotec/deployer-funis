@@ -1,3 +1,5 @@
+import re
+
 from .ssh import get_ssh_session
 
 BOOTSTRAP_CMD = (
@@ -85,6 +87,50 @@ def ensure_php(vps, log=lambda msg: None):
                 "Extensões do PHP ausentes mesmo após a instalação: "
                 f"{', '.join(still_missing)}. O funil responderia HTTP 500 — "
                 "verifique o apt no VPS."
+            )
+    finally:
+        session.close()
+
+
+NODE_CMD = (
+    "export DEBIAN_FRONTEND=noninteractive && "
+    "apt-get update -y && "
+    # build-essential + python3 back node-gyp, which better-sqlite3 falls back to
+    # compiling from source whenever there's no prebuilt binary for this Node/ABI combo.
+    "apt-get install -y curl ca-certificates build-essential python3 && "
+    "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && "
+    "apt-get install -y nodejs"
+)
+
+REQUIRED_NODE_MAJOR = 20
+
+
+def _installed_node_major(session) -> int:
+    try:
+        out = session.run("node --version").strip()  # e.g. "v20.11.0"
+    except Exception:
+        return 0
+    m = re.match(r"^v(\d+)\.", out)
+    return int(m.group(1)) if m else 0
+
+
+def ensure_node(vps, log=lambda msg: None):
+    """Installs Node (via NodeSource) on demand, verifying on the server rather than
+    trusting any cached flag — mirrors ensure_php's reasoning: a reused or
+    pre-provisioned VPS can silently lack Node even if an earlier deploy "installed" it."""
+    if vps.provider == "mock":
+        return
+    session = get_ssh_session(vps)
+    session.connect()
+    try:
+        if _installed_node_major(session) >= REQUIRED_NODE_MAJOR:
+            return
+        log(f"Instalando Node.js {REQUIRED_NODE_MAJOR}.x...")
+        session.run(NODE_CMD, timeout=600)
+        if _installed_node_major(session) < REQUIRED_NODE_MAJOR:
+            raise RuntimeError(
+                f"Node.js {REQUIRED_NODE_MAJOR}.x não encontrado mesmo após a instalação — "
+                "verifique o apt/NodeSource no VPS."
             )
     finally:
         session.close()

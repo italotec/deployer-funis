@@ -54,7 +54,7 @@
         <a href="{{ url_for('funnels.funnel_detail', funnel_id=f.id) }}" class="block card hover:border-emerald-700">
           <div class="font-medium">{{ f.name }}</div>
           <div class="text-xs text-zinc-500 mt-1">{{ f.description or "Sem descrição" }}</div>
-          {% if f.has_php %}<span class="badge bg-indigo-900 text-indigo-300 mt-2">PHP</span>{% endif %}
+          {% if f.stack == 'php' %}<span class="badge bg-indigo-900 text-indigo-300 mt-2">PHP</span>{% elif f.stack == 'node' %}<span class="badge bg-emerald-900 text-emerald-300 mt-2">Node</span>{% endif %}
         </a>
       {% endfor %}
     </div>

@@ -8,10 +8,16 @@ _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__
 _env = jinja2.Environment(loader=jinja2.FileSystemLoader(_TEMPLATES_DIR))
 
 
-def render_site_conf(domain: str, webroot: str, has_php: bool, php_socket: str = "") -> str:
-    template_name = "php_site.conf.j2" if has_php else "site.conf.j2"
-    tpl = _env.get_template(template_name)
-    return tpl.render(domain=domain, webroot=webroot, php_socket=php_socket)
+_STACK_TEMPLATES = {
+    "php": "php_site.conf.j2",
+    "node": "node_site.conf.j2",
+    "static": "site.conf.j2",
+}
+
+
+def render_site_conf(domain: str, webroot: str, stack: str, php_socket: str = "", app_port: int = 0) -> str:
+    tpl = _env.get_template(_STACK_TEMPLATES.get(stack, "site.conf.j2"))
+    return tpl.render(domain=domain, webroot=webroot, php_socket=php_socket, app_port=app_port)
 
 
 def deploy_site_conf(vps, domain: str, conf_text: str, log=lambda msg: None) -> str:

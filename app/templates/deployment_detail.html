@@ -15,6 +15,9 @@
   {% if dep.status == 'live' %}
     <a href="{{ dep.live_url }}" target="_blank" class="text-cyan-400 hover:underline text-sm mt-2 inline-block">{{ dep.live_url }}</a>
   {% endif %}
+  {% if dep.app_port %}
+    <div class="text-xs text-zinc-500 mt-1">Porta local (Node): {{ dep.app_port }}</div>
+  {% endif %}
 
   <div class="flex gap-2 mt-3">
     <form method="post" action="{{ url_for('deployments.retry_deployment', deployment_id=dep.id) }}">

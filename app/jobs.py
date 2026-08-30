@@ -8,7 +8,7 @@ from . import db
 from .models import Vps, Domain, Funnel, DeployBatch, Deployment, ProviderCredential
 from .services.vps import get_vps_provider
 from .services.registrar import get_registrar_provider
-from .services.deploy import provisioner, deployer
+from .services.deploy import provisioner, deployer, ports
 
 
 def _deploy_log_path(app, deployment_id):
@@ -79,9 +79,24 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
             vps.php_installed = True
             db.session.commit()
 
+        app_port = 0
+        if funnel.stack == "node":
+            # Reserved against the DB (not chosen later) because different batches run
+            # in separate threads (start_deploy_batch_job) and could otherwise race to
+            # pick the same port on the same VPS.
+            app_port = ports.allocate_port(dep)
+
+            dep.status = "installing"
+            db.session.commit()
+            deployer.install_node_deps(vps, funnel, webroot, log=log)
+
+            dep.status = "starting"
+            db.session.commit()
+            deployer.start_node_service(vps, funnel, domain.name, webroot, app_port, log=log)
+
         dep.status = "nginx"
         db.session.commit()
-        conf_path = deployer.configure_nginx(vps, funnel, domain.name, webroot, log=log)
+        conf_path = deployer.configure_nginx(vps, funnel, domain.name, webroot, log=log, app_port=app_port)
         dep.nginx_conf_path = conf_path
         db.session.commit()
 

@@ -47,7 +47,7 @@ class SSHSession:
             raise RuntimeError(f"Comando falhou ({exit_code}): {command}\n{(err or out).strip()}")
         return out
 
-    def _open_sftp(self, stall_timeout: int = 60):
+    def _open_sftp(self, stall_timeout: int = 600):
         """Opens SFTP with a stall timeout — without it, a stalled transfer (dropped
         connection, unresponsive VPS) blocks the deploy thread forever with no exception,
         leaving the deployment stuck mid-status with nothing to mark it as failed."""

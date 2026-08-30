@@ -154,6 +154,9 @@ class Funnel(db.Model):
     entry_file = db.Column(db.String(64), default="index.html", nullable=False)
     has_php = db.Column(db.Boolean, default=False, nullable=False)
 
+    stack = db.Column(db.String(16), default="static", nullable=False)  # static | php | node
+    app_root = db.Column(db.String(255), default="", nullable=False)  # dir holding package.json, relative to storage_path
+
     uploaded_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
@@ -188,10 +191,11 @@ class Deployment(db.Model):
     vps_id = db.Column(db.Integer, db.ForeignKey("vps.id"), nullable=False, index=True)
 
     status = db.Column(db.String(32), default="queued", nullable=False)
-    # queued | registering_domain | dns | uploading | nginx | ssl | live | error
+    # queued | registering_domain | dns | uploading | installing | starting | nginx | ssl | live | error
 
     live_url = db.Column(db.String(255), default="", nullable=False)
     nginx_conf_path = db.Column(db.String(255), default="", nullable=False)
+    app_port = db.Column(db.Integer, default=0, nullable=False)  # local port of the Node process; 0 = not Node
 
     last_message = db.Column(db.Text, default="", nullable=False)
     created_at = db.Column(db.DateTime, default=_now_sp, nullable=False)

@@ -29,7 +29,10 @@ def funnel_detail(funnel_id):
     for d in Domain.query.filter_by(user_id=current_user.id).order_by(Domain.name).all():
         live_dep = live_deployment_by_domain.get(d.id)
         if live_dep:
-            label = f'em uso por "{live_dep.funnel.name}"'
+            if live_dep.funnel:
+                label = f'em uso por "{live_dep.funnel.name}"'
+            else:
+                label = "em uso (funil indisponível)"
         elif d.status == "registering":
             label = "registrando…"
         elif d.status == "error":
