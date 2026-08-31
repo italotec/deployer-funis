@@ -103,7 +103,13 @@ def deploy_funnel(funnel_id):
     for name in names:
         domain = existing_by_name.get(name)
         if not domain:
-            domain = Domain(user_id=current_user.id, registrar=registrar_cred.provider, name=name, status="registering")
+            domain = Domain(
+                user_id=current_user.id,
+                registrar=registrar_cred.provider,
+                credential_id=registrar_cred.id,
+                name=name,
+                status="registering",
+            )
             db.session.add(domain)
             db.session.flush()
         elif domain.status not in ("registered", "dns_set"):

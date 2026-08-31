@@ -81,6 +81,25 @@ def create_app():
             db.session.execute(db.text("ALTER TABLE deployment ADD COLUMN app_port INTEGER NOT NULL DEFAULT 0"))
         db.session.commit()
 
+        existing_domain_columns = {row[1] for row in db.session.execute(db.text("PRAGMA table_info(domain)"))}
+        if "credential_id" not in existing_domain_columns:
+            db.session.execute(db.text("ALTER TABLE domain ADD COLUMN credential_id INTEGER REFERENCES provider_credential(id)"))
+            # Backfill existing rows with the credential the deploy pipeline used to
+            # resolve implicitly (first registrar credential matching the provider),
+            # so behaviour is unchanged for domains registered before this column.
+            db.session.execute(db.text("""
+                UPDATE domain
+                SET credential_id = (
+                    SELECT pc.id FROM provider_credential pc
+                    WHERE pc.user_id = domain.user_id
+                      AND pc.kind = 'registrar'
+                      AND pc.provider = domain.registrar
+                    ORDER BY pc.id LIMIT 1
+                )
+                WHERE credential_id IS NULL AND registrar != 'manual'
+            """))
+            db.session.commit()
+
         # Recover state left behind by a crash/restart — in-process threads die with
         # the process, so anything mid-flight is stuck forever unless marked as failed here.
         from .models import Vps, Deployment, DeployBatch

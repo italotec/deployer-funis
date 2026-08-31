@@ -111,7 +111,13 @@ def register_domain():
         flash("Você já tem esse domínio cadastrado.", "error")
         return redirect(url_for("domains.domains_page"))
 
-    domain = Domain(user_id=current_user.id, registrar=cred.provider, name=name, status="registering")
+    domain = Domain(
+        user_id=current_user.id,
+        registrar=cred.provider,
+        credential_id=cred.id,
+        name=name,
+        status="registering",
+    )
     db.session.add(domain)
     db.session.commit()
 

@@ -48,12 +48,22 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
         if domain.registrar == "manual":
             registrar_provider = get_registrar_provider("manual", {})
         else:
-            cred = ProviderCredential.query.filter_by(
-                user_id=dep.user_id, kind="registrar", provider=domain.registrar
-            ).first()
+            # Authenticate as the exact account this domain belongs to. Falling back to
+            # the first credential of the provider only covers legacy rows with no link;
+            # with multiple accounts of the same registrar, the wrong one can't manage
+            # the domain (Njalla returns "Permission denied" on its DNS records).
+            cred = None
+            if domain.credential_id:
+                cred = ProviderCredential.query.filter_by(
+                    id=domain.credential_id, user_id=dep.user_id, kind="registrar"
+                ).first()
+            if not cred:
+                cred = ProviderCredential.query.filter_by(
+                    user_id=dep.user_id, kind="registrar", provider=domain.registrar
+                ).order_by(ProviderCredential.id).first()
             if not cred:
                 raise RuntimeError(f"Nenhuma credencial cadastrada para o registrador '{domain.registrar}'.")
-            registrar_provider = get_registrar_provider(domain.registrar, cred.get_secret())
+            registrar_provider = get_registrar_provider(cred.provider, cred.get_secret())
 
         if domain.status == "registering":
             dep.status = "registering_domain"

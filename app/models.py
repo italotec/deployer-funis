@@ -132,6 +132,13 @@ class Domain(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
 
     registrar = db.Column(db.String(32), nullable=False)
+    # Which registrar account this domain was registered/managed under. Nullable for
+    # "manual" (external) domains and legacy rows; when an account owns the domain the
+    # deploy pipeline must authenticate as this exact credential, not just any
+    # credential that happens to share the provider name.
+    credential_id = db.Column(db.Integer, db.ForeignKey("provider_credential.id"), nullable=True)
+    credential = db.relationship("ProviderCredential")
+
     name = db.Column(db.String(255), nullable=False)
     registrar_order_id = db.Column(db.String(128), default="", nullable=False)
 

@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 
 from .. import db
-from ..models import ProviderCredential
+from ..models import ProviderCredential, Domain, Vps
 from ..services.vps import list_vps_providers, get_vps_provider, provider_meta as vps_provider_meta
 from ..services.registrar import list_registrar_providers, get_registrar_provider, provider_meta as registrar_provider_meta
 
@@ -168,6 +168,21 @@ def test_credential(cred_id):
 @login_required
 def delete_credential(cred_id):
     cred = ProviderCredential.query.filter_by(id=cred_id, user_id=current_user.id).first_or_404()
+
+    linked_domains = Domain.query.filter_by(credential_id=cred.id).count()
+    linked_vpses = Vps.query.filter_by(credential_id=cred.id).count()
+    if linked_domains or linked_vpses:
+        parts = []
+        if linked_domains:
+            parts.append(f"{linked_domains} domínio(s)")
+        if linked_vpses:
+            parts.append(f"{linked_vpses} VPS(s)")
+        flash(
+            "Essa credencial está vinculada a " + " e ".join(parts) + ". Remova-os antes de excluí-la.",
+            "error",
+        )
+        return redirect(url_for("credentials.credentials_page"))
+
     db.session.delete(cred)
     db.session.commit()
     flash("Credencial removida.", "success")
