@@ -105,6 +105,25 @@ def add_manual_vps():
     return redirect(url_for("vps.vps_page"))
 
 
+@bp.route("/<int:vps_id>/reprovisionar", methods=["POST"])
+@login_required
+def reprovision_vps(vps_id):
+    vps = Vps.query.filter_by(id=vps_id, user_id=current_user.id).first_or_404()
+
+    if not vps.ip_address:
+        flash("Este VPS ainda não tem um IP — aguarde o provisionamento inicial.", "error")
+        return redirect(url_for("vps.vps_page"))
+
+    vps.status = "provisioning"
+    vps.last_message = "Reexecutando instalação de nginx/certbot..."
+    db.session.commit()
+
+    jobs.start_manual_vps_bootstrap_job(vps.id)
+
+    flash("Reprovisionamento iniciado. Acompanhe o status nesta página.", "success")
+    return redirect(url_for("vps.vps_page"))
+
+
 @bp.route("/<int:vps_id>/destruir", methods=["POST"])
 @login_required
 def destroy_vps(vps_id):

@@ -2,20 +2,38 @@ import re
 
 from .ssh import get_ssh_session
 
+# Freshly provisioned cloud VMs run cloud-init / unattended-upgrades on first boot,
+# which holds /var/lib/dpkg/lock-frontend and /var/lib/apt/lists/lock for a minute
+# or two. Running apt-get before that clears dies with
+# "E: Could not get lock /var/lib/apt/lists/lock. It is held by process N (apt-get)".
+# Wait for cloud-init to finish and for the locks to drain, then still pass
+# DPkg::Lock::Timeout so apt itself keeps retrying instead of aborting on a race.
+APT_WAIT = (
+    "{ command -v cloud-init >/dev/null 2>&1 && "
+    "cloud-init status --wait >/dev/null 2>&1 || true; } && "
+    "for _ in $(seq 1 60); do "
+    "fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock "
+    ">/dev/null 2>&1 || break; "
+    "echo 'aguardando liberação do lock do apt/dpkg...'; sleep 5; done"
+)
+APT = "apt-get -o DPkg::Lock::Timeout=300"
+
 BOOTSTRAP_CMD = (
     "export DEBIAN_FRONTEND=noninteractive && "
-    "apt-get update -y && "
-    "apt-get install -y nginx certbot python3-certbot-nginx && "
+    f"{APT_WAIT} && "
+    f"{APT} update -y && "
+    f"{APT} install -y nginx certbot python3-certbot-nginx && "
     "systemctl enable nginx && systemctl start nginx"
 )
 
 PHP_CMD = (
     "export DEBIAN_FRONTEND=noninteractive && "
-    "apt-get update -y && "
+    f"{APT_WAIT} && "
+    f"{APT} update -y && "
     # php-fpm alone ships without the SQLite PDO driver (funnels store config, rate
     # limits and PIX transactions in SQLite) nor curl (PIX gateway calls) — without
     # these, every DB/gateway call throws and PHP returns a bare HTTP 500.
-    "apt-get install -y php-fpm php-sqlite3 php-curl php-mbstring && "
+    f"{APT} install -y php-fpm php-sqlite3 php-curl php-mbstring && "
     # Brace groups keep each systemctl best-effort without the trailing `|| true`
     # swallowing an apt failure the way `install && enable || true` did.
     "{ systemctl enable 'php*-fpm' 2>/dev/null || true; } && "
@@ -94,12 +112,13 @@ def ensure_php(vps, log=lambda msg: None):
 
 NODE_CMD = (
     "export DEBIAN_FRONTEND=noninteractive && "
-    "apt-get update -y && "
+    f"{APT_WAIT} && "
+    f"{APT} update -y && "
     # build-essential + python3 back node-gyp, which better-sqlite3 falls back to
     # compiling from source whenever there's no prebuilt binary for this Node/ABI combo.
-    "apt-get install -y curl ca-certificates build-essential python3 && "
+    f"{APT} install -y curl ca-certificates build-essential python3 && "
     "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && "
-    "apt-get install -y nodejs"
+    f"{APT} install -y nodejs"
 )
 
 REQUIRED_NODE_MAJOR = 20

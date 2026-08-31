@@ -19,9 +19,16 @@
             <div class="text-xs text-zinc-400 mt-1">{{ v.last_message }}</div>
             <div class="flex items-center justify-between mt-2">
               <span class="badge bg-zinc-800 text-zinc-200">{{ v.deployment_count }} funil(is) implantado(s)</span>
-              <form method="post" action="{{ url_for('vps.destroy_vps', vps_id=v.id) }}" onsubmit="return confirm('Destruir este VPS?');">
-                <button class="btn bg-red-900 hover:bg-red-800 text-xs" type="submit">Destruir</button>
-              </form>
+              <div class="flex items-center gap-2">
+                {% if v.status != 'provisioning' and v.ip_address %}
+                  <form method="post" action="{{ url_for('vps.reprovision_vps', vps_id=v.id) }}" onsubmit="return confirm('Reexecutar a instalação de nginx/certbot neste VPS?');">
+                    <button class="btn bg-zinc-800 hover:bg-zinc-700 text-xs" type="submit">Reprovisionar</button>
+                  </form>
+                {% endif %}
+                <form method="post" action="{{ url_for('vps.destroy_vps', vps_id=v.id) }}" onsubmit="return confirm('Destruir este VPS?');">
+                  <button class="btn bg-red-900 hover:bg-red-800 text-xs" type="submit">Destruir</button>
+                </form>
+              </div>
             </div>
           </div>
         {% endfor %}
