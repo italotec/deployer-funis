@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 
 from .. import db
-from ..models import Domain, ProviderCredential
+from ..models import Domain, Deployment, ProviderCredential
 from ..services.registrar import get_registrar_provider
 
 bp = Blueprint("domains", __name__, url_prefix="/dominios")
@@ -73,6 +73,27 @@ def add_manual_domain():
     db.session.commit()
 
     flash(f"{name} adicionado. Aponte o DNS dele para o IP do VPS de destino ao implantar.", "success")
+    return redirect(url_for("domains.domains_page"))
+
+
+@bp.route("/<int:domain_id>/excluir", methods=["POST"])
+@login_required
+def delete_domain(domain_id):
+    domain = Domain.query.filter_by(id=domain_id, user_id=current_user.id).first_or_404()
+
+    in_use = Deployment.query.filter_by(domain_id=domain.id).count()
+    if in_use:
+        flash("Remova os funis implantados neste domínio antes de excluí-lo.", "error")
+        return redirect(url_for("domains.domains_page"))
+
+    name = domain.name
+    db.session.delete(domain)
+    db.session.commit()
+    flash(
+        f"{name} removido do painel. Se ele foi registrado num provedor, "
+        "o registro continua ativo lá — cancele-o no painel do registrador se quiser.",
+        "success",
+    )
     return redirect(url_for("domains.domains_page"))
 
 

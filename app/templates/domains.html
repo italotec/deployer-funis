@@ -11,10 +11,15 @@
               <div class="font-medium">{{ d.name }}</div>
               <div class="text-xs text-zinc-500">{{ d.registrar }}{% if d.last_message %} • {{ d.last_message }}{% endif %}</div>
             </div>
-            <span class="badge
-              {% if d.status in ('registered', 'dns_set') %} bg-emerald-900 text-emerald-300
-              {% elif d.status == 'error' %} bg-red-900 text-red-300
-              {% else %} bg-zinc-800 text-zinc-200 {% endif %}">{{ d.status }}</span>
+            <div class="flex items-center gap-2">
+              <span class="badge
+                {% if d.status in ('registered', 'dns_set') %} bg-emerald-900 text-emerald-300
+                {% elif d.status == 'error' %} bg-red-900 text-red-300
+                {% else %} bg-zinc-800 text-zinc-200 {% endif %}">{{ d.status }}</span>
+              <form method="post" action="{{ url_for('domains.delete_domain', domain_id=d.id) }}" onsubmit="return confirm('Excluir {{ d.name }} do painel?');">
+                <button class="btn bg-red-900 hover:bg-red-800 text-xs" type="submit">Excluir</button>
+              </form>
+            </div>
           </div>
         {% endfor %}
       </div>
