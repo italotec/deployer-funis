@@ -1,9 +1,10 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 
 from .. import db, jobs
 from ..models import Vps, Deployment, ProviderCredential
 from ..services.vps import get_vps_provider
+from ..services.deploy.ssh import get_ssh_session
 
 bp = Blueprint("vps", __name__, url_prefix="/vps")
 
@@ -122,6 +123,34 @@ def reprovision_vps(vps_id):
 
     flash("Reprovisionamento iniciado. Acompanhe o status nesta página.", "success")
     return redirect(url_for("vps.vps_page"))
+
+
+@bp.route("/<int:vps_id>/testar", methods=["POST"])
+@login_required
+def test_vps(vps_id):
+    vps = Vps.query.filter_by(id=vps_id, user_id=current_user.id).first_or_404()
+
+    if not vps.ip_address:
+        return jsonify({"ok": False, "message": "Este VPS ainda não tem um IP."})
+
+    session = get_ssh_session(vps)
+    # Single attempt with a short timeout: this is a liveness check the user is
+    # waiting on, not the provisioning wait connect() retries for by default.
+    session.timeout = 8
+    try:
+        session.connect(retries=1, delay=0)
+        uptime = session.run("uptime -p 2>/dev/null || uptime", timeout=15).strip()
+        ok = True
+        message = ("VPS online — " + uptime) if uptime else "VPS online."
+    except Exception as exc:
+        ok, message = False, str(exc)
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    return jsonify({"ok": ok, "message": message})
 
 
 @bp.route("/<int:vps_id>/destruir", methods=["POST"])

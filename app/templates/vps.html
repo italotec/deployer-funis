@@ -17,9 +17,13 @@
             <div class="text-xs text-zinc-500 mt-1">{{ v.provider }} • {{ v.region }} • {{ v.plan }}</div>
             <div class="text-xs text-zinc-500">IP: {{ v.ip_address or "—" }}</div>
             <div class="text-xs text-zinc-400 mt-1">{{ v.last_message }}</div>
+            <div class="text-xs mt-1 hidden" id="vps-test-result-{{ v.id }}"></div>
             <div class="flex items-center justify-between mt-2">
               <span class="badge bg-zinc-800 text-zinc-200">{{ v.deployment_count }} funil(is) implantado(s)</span>
               <div class="flex items-center gap-2">
+                {% if v.ip_address %}
+                  <button type="button" class="btn bg-zinc-800 hover:bg-zinc-700 text-xs test-vps-btn" data-vps-id="{{ v.id }}">Testar</button>
+                {% endif %}
                 {% if v.status != 'provisioning' and v.ip_address %}
                   <form method="post" action="{{ url_for('vps.reprovision_vps', vps_id=v.id) }}" onsubmit="return confirm('Reexecutar a instalação de nginx/certbot neste VPS?');">
                     <button class="btn bg-zinc-800 hover:bg-zinc-700 text-xs" type="submit">Reprovisionar</button>
@@ -128,6 +132,27 @@
   document.getElementById("close-manual-vps-modal").addEventListener("click", () => manualVpsModal.classList.add("hidden"));
   manualVpsModal.addEventListener("click", (e) => {
     if (e.target === manualVpsModal) manualVpsModal.classList.add("hidden");
+  });
+
+  document.querySelectorAll(".test-vps-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const vpsId = btn.dataset.vpsId;
+      const resultEl = document.getElementById(`vps-test-result-${vpsId}`);
+      btn.disabled = true;
+      resultEl.textContent = "Testando conexão SSH...";
+      resultEl.className = "text-xs mt-1 text-zinc-400";
+      try {
+        const res = await fetch(`/vps/${vpsId}/testar`, { method: "POST" });
+        const data = await res.json();
+        resultEl.textContent = data.message;
+        resultEl.className = "text-xs mt-1 " + (data.ok ? "text-emerald-400" : "text-red-400");
+      } catch (err) {
+        resultEl.textContent = "Erro ao testar o VPS.";
+        resultEl.className = "text-xs mt-1 text-red-400";
+      } finally {
+        btn.disabled = false;
+      }
+    });
   });
 </script>
 {% endblock %}
