@@ -140,10 +140,26 @@ def install_node_deps(vps, funnel, webroot: str, log=lambda msg: None):
     session = get_ssh_session(vps)
     session.connect()
     try:
-        log("Instalando dependências (npm ci)...")
         has_lock = session.run(f"test -f {app_dir}/package-lock.json && echo 1 || echo 0").strip() == "1"
-        install_cmd = "npm ci --omit=dev" if has_lock else "npm install --omit=dev"
-        session.run(f"cd {app_dir} && {install_cmd}", timeout=1800)
+        if has_lock:
+            log("Instalando dependências (npm ci)...")
+            try:
+                session.run(f"cd {app_dir} && npm ci --omit=dev", timeout=1800)
+            except RuntimeError as exc:
+                # A zip whose package.json gained deps without a regenerated lockfile makes
+                # npm ci abort ("can only install packages when your package.json and
+                # package-lock.json are in sync") — it never resolves anything on its own.
+                # npm install fetches the missing deps and rewrites the lock, so fall back to
+                # it instead of failing the deploy over a stale lockfile nobody can fix from
+                # here. Any other failure (network, build scripts, disk) still aborts.
+                msg = str(exc)
+                if "can only install packages" not in msg and "EUSAGE" not in msg:
+                    raise
+                log("package-lock.json fora de sincronia com package.json; usando npm install...")
+                session.run(f"cd {app_dir} && npm install --omit=dev", timeout=1800)
+        else:
+            log("Instalando dependências (npm install)...")
+            session.run(f"cd {app_dir} && npm install --omit=dev", timeout=1800)
 
         try:
             pkg = json.loads(session.run(f"cat {app_dir}/package.json"))
