@@ -226,10 +226,78 @@ _HEALTH_CHECK_ATTEMPTS = 20
 _HEALTH_CHECK_DELAY = 3
 
 
-def start_node_service(vps, funnel, domain_name: str, webroot: str, app_port: int, log=lambda msg: None):
+def _unit_pids(session, unit: str) -> set:
+    """Every PID belonging to a systemd unit — the cgroup lists them all, on either
+    cgroup hierarchy. Falls back to MainPID plus its direct children for hosts where the
+    cgroup files aren't readable: with `npm start` the listener is npm's node child, so
+    MainPID alone would miss it."""
+    procs = session.run(
+        f"cat /sys/fs/cgroup/system.slice/{unit}.service/cgroup.procs "
+        f"/sys/fs/cgroup/systemd/system.slice/{unit}.service/cgroup.procs 2>/dev/null || true"
+    )
+    pids = {pid for pid in procs.split() if pid.isdigit()}
+    if pids:
+        return pids
+
+    main = session.run(f"systemctl show -p MainPID --value {unit} 2>/dev/null || true").strip()
+    if not main.isdigit() or main == "0":
+        return set()
+    children = session.run(f"ps -o pid= --ppid {main} 2>/dev/null || true")
+    return {main} | {pid for pid in children.split() if pid.isdigit()}
+
+
+def _detect_listening_port(session, domain_name: str) -> int:
+    """Which TCP port the unit's processes actually bound, or 0 if none/undetectable.
+
+    Only consulted after the health check on the assigned port failed. Plenty of funnel
+    apps hardcode their port (`app.listen(3000)`) instead of reading PORT, so the process
+    is alive and healthy on a port nobody told nginx about — indistinguishable, from the
+    health check's side, from an app that crashed. Asking the kernel which port the unit
+    owns tells the two apart.
+    """
+    unit = systemd.unit_name(domain_name)
+    try:
+        pids = _unit_pids(session, unit)
+        if not pids:
+            return 0
+        listeners = session.run("ss -tlnp 2>/dev/null || true")
+    except Exception:
+        return 0
+
+    for line in listeners.splitlines():
+        if not any(f"pid={pid}," in line for pid in pids):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        port = parts[3].rpartition(":")[2]
+        if port.isdigit():
+            return int(port)
+    return 0
+
+
+def _responds_on(session, port: int, attempts: int, delay: int) -> bool:
+    for _ in range(attempts):
+        try:
+            session.run(f"curl -fsS -o /dev/null http://127.0.0.1:{port}/", timeout=10)
+            return True
+        except Exception:
+            time.sleep(delay)
+    return False
+
+
+def start_node_service(vps, funnel, domain_name: str, webroot: str, app_port: int,
+                       log=lambda msg: None) -> int:
+    """Starts the funnel's systemd unit and returns the port it actually serves on.
+
+    Usually that is `app_port` — the port reserved for this deployment and written into
+    the app's .env. An app that hardcodes its own port ignores that and listens
+    elsewhere, so the real port is detected and returned for nginx to proxy to; the
+    caller reserves it (ports.claim_port) so no other funnel on this VPS is handed it.
+    """
     if vps.provider == "mock":
         log("Modo mock: pulando inicialização real do serviço Node.")
-        return
+        return app_port
 
     app_dir = f"{webroot}/{funnel.app_root}" if funnel.app_root else webroot
     exec_start = f"/usr/bin/node {funnel.entry_file}" if funnel.entry_file else "/usr/bin/npm start"
@@ -254,12 +322,16 @@ def start_node_service(vps, funnel, domain_name: str, webroot: str, app_port: in
     session = get_ssh_session(vps)
     session.connect()
     try:
-        for _ in range(_HEALTH_CHECK_ATTEMPTS):
-            try:
-                session.run(f"curl -fsS -o /dev/null http://127.0.0.1:{app_port}/", timeout=10)
-                return
-            except Exception:
-                time.sleep(_HEALTH_CHECK_DELAY)
+        if _responds_on(session, app_port, _HEALTH_CHECK_ATTEMPTS, _HEALTH_CHECK_DELAY):
+            return app_port
+
+        actual = _detect_listening_port(session, domain_name)
+        if actual and actual != app_port and _responds_on(session, actual, 3, _HEALTH_CHECK_DELAY):
+            log(
+                f"Aplicação ignorou PORT={app_port} e subiu na porta {actual} "
+                f"(porta fixa no código do funil); apontando o nginx para {actual}."
+            )
+            return actual
     finally:
         session.close()
 

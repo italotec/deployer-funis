@@ -102,7 +102,10 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
 
             dep.status = "starting"
             db.session.commit()
-            deployer.start_node_service(vps, funnel, domain.name, webroot, app_port, log=log)
+            # A funnel app that hardcodes its port ignores the PORT we hand it, so the
+            # port it actually bound is what nginx has to proxy to.
+            app_port = deployer.start_node_service(vps, funnel, domain.name, webroot, app_port, log=log)
+            ports.claim_port(dep, app_port)
 
         dep.status = "nginx"
         db.session.commit()

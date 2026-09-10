@@ -30,3 +30,29 @@ def allocate_port(deployment: Deployment) -> int:
             return port
 
     raise RuntimeError(f"Nenhuma porta livre entre {BASE_PORT} e {MAX_PORT} neste VPS.")
+
+
+def claim_port(deployment: Deployment, port: int) -> None:
+    """Reserves a port the app chose for itself instead of the one it was assigned.
+
+    Refuses when another deployment on the same VPS already holds it: two funnels that
+    both hardcode the same port cannot coexist there, and silently pointing this domain's
+    nginx at a port owned by another domain would serve the wrong funnel.
+    """
+    if deployment.app_port == port:
+        return
+
+    conflict = Deployment.query.filter(
+        Deployment.vps_id == deployment.vps_id,
+        Deployment.app_port == port,
+        Deployment.id != deployment.id,
+    ).first()
+    if conflict:
+        raise RuntimeError(
+            f"A aplicação subiu na porta {port}, que já está reservada para outro funil "
+            f"neste VPS (deployment #{conflict.id}). Para dividir o servidor, o funil "
+            f"precisa respeitar a variável PORT do .env em vez de fixar a porta no código."
+        )
+
+    deployment.app_port = port
+    db.session.commit()
