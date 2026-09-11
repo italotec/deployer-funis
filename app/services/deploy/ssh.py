@@ -1,5 +1,6 @@
 import io
 import os
+import shlex
 import time
 
 import paramiko
@@ -63,12 +64,12 @@ class SSHSession:
 
     def upload_dir(self, local_dir: str, remote_dir: str):
         sftp = self._open_sftp()
-        self.run(f"mkdir -p {remote_dir}")
+        self.run(f"mkdir -p {shlex.quote(remote_dir)}")
         for root, dirs, files in os.walk(local_dir):
             rel = os.path.relpath(root, local_dir)
             remote_root = remote_dir if rel == "." else f"{remote_dir}/{rel.replace(os.sep, '/')}"
             if rel != ".":
-                self.run(f"mkdir -p {remote_root}")
+                self.run(f"mkdir -p {shlex.quote(remote_root)}")
             for fname in files:
                 sftp.put(os.path.join(root, fname), f"{remote_root}/{fname}")
         sftp.close()
