@@ -311,6 +311,9 @@ def start_node_service(vps, funnel, domain_name: str, webroot: str, app_port: in
         log("Parando processo anterior (se existir)...")
         session.run(f"systemctl stop {unit_name} 2>/dev/null || true")
         session.run(f"fuser -k {app_port}/tcp 2>/dev/null || true")
+        # Timestamp on the VPS clock so recent_logs can scope to this attempt without
+        # local/remote clock skew (see the failure path below).
+        attempt_since = session.run("date '+%Y-%m-%d %H:%M:%S'").strip()
         time.sleep(1)
     finally:
         session.close()
@@ -335,10 +338,15 @@ def start_node_service(vps, funnel, domain_name: str, webroot: str, app_port: in
     finally:
         session.close()
 
-    tail = systemd.recent_logs(vps, domain_name)
+    # Couldn't reach the app on the assigned or the detected port: it's crash-looping.
+    # Stop the unit before bailing so it doesn't keep squatting whatever port it hardcoded
+    # and hand the next deploy an EADDRINUSE. Pull the log scoped to this attempt so the
+    # real first-boot error is visible instead of just the recurring restart error.
+    tail = systemd.recent_logs(vps, domain_name, since=attempt_since)
+    systemd.stop_unit(vps, domain_name, log=log)
     raise RuntimeError(
         f"Aplicação Node não respondeu em http://127.0.0.1:{app_port}/ após a inicialização.\n"
-        f"Últimas linhas do log do serviço:\n{tail}"
+        f"Log do serviço nesta tentativa:\n{tail}"
     )
 
 

@@ -31,6 +31,20 @@ def deploy_unit(vps, domain: str, unit_text: str, log=lambda msg: None):
         session.close()
 
 
+def stop_unit(vps, domain: str, log=lambda msg: None):
+    """Stops and disables the unit without removing its files — used when a deploy fails
+    to become healthy. The unit is `enable`d with Restart=always, so left alone a
+    crash-looping funnel keeps squatting whatever port it hardcoded (e.g. 3000), and the
+    next deploy that wants that port dies with EADDRINUSE. Disabling --now frees it."""
+    name = unit_name(domain)
+    session = get_ssh_session(vps)
+    session.connect()
+    try:
+        session.run(f"systemctl disable --now {name} 2>/dev/null || true")
+    finally:
+        session.close()
+
+
 def remove_unit(vps, domain: str, log=lambda msg: None):
     name = unit_name(domain)
     session = get_ssh_session(vps)
@@ -43,14 +57,20 @@ def remove_unit(vps, domain: str, log=lambda msg: None):
         session.close()
 
 
-def recent_logs(vps, domain: str, lines: int = 50) -> str:
+def recent_logs(vps, domain: str, lines: int = 50, since: str = "") -> str:
     if vps.provider == "mock":
         return ""
     name = unit_name(domain)
     session = get_ssh_session(vps)
     session.connect()
     try:
-        return session.run(f"journalctl -u {name} -n {lines} --no-pager || true")
+        # `since` scopes the log to the current deploy attempt. A funnel that crash-loops
+        # (Restart=always) fills the last N lines with the SAME recurring error — often an
+        # EADDRINUSE from an earlier restart colliding with itself — burying the real
+        # first-boot cause. Pulling everything since the attempt began keeps that cause in
+        # view; we drop -n so the window, not a line count, bounds the output.
+        scope = f'--since "{since}"' if since else f"-n {lines}"
+        return session.run(f"journalctl -u {name} {scope} --no-pager || true")
     except Exception:
         return ""
     finally:
