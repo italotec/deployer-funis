@@ -179,14 +179,53 @@ def install_node_deps(vps, funnel, webroot: str, log=lambda msg: None):
         session.close()
 
 
+_PORT_SHIM_PATH = "/usr/local/lib/deployer-portshim.cjs"
+
+# Preloaded via NODE_OPTIONS=--require before the funnel's own code runs. Many funnel
+# templates hardcode their listen port (e.g. app.listen(3000)), which ignores the unique
+# PORT we assign and collides with every other funnel on the VPS. This rewrites every
+# .listen(port, ...) call to the assigned PORT so each funnel lands on its own port. It's
+# CommonJS on purpose: --require preloads run as CJS even when the app itself is ESM.
+_PORT_SHIM_SRC = """'use strict';
+// Managed by Deployer Funis — do not edit. Forces funnel apps that hardcode their listen
+// port onto the PORT assigned by the deployer, so each funnel gets its own port.
+const net = require('net');
+const desired = parseInt(process.env.PORT, 10);
+if (Number.isInteger(desired) && desired > 0) {
+  const origListen = net.Server.prototype.listen;
+  net.Server.prototype.listen = function (...args) {
+    const first = args[0];
+    if (typeof first === 'number') {
+      args[0] = desired;
+    } else if (first && typeof first === 'object'
+               && typeof first.port !== 'undefined'
+               && first.path === undefined && first.fd === undefined) {
+      args[0] = Object.assign({}, first, { port: desired });
+    }
+    return origListen.apply(this, args);
+  };
+}
+"""
+
+
+def _install_port_shim(session):
+    """Writes the listen-port shim to a fixed VPS path (idempotent). Kept at a shared,
+    space-free path so the NODE_OPTIONS=--require value never has to be quoted."""
+    session.run("mkdir -p /usr/local/lib")
+    session.write_file(_PORT_SHIM_PATH, _PORT_SHIM_SRC)
+    session.run(f"chmod 644 {_PORT_SHIM_PATH}")
+
+
 def _ensure_node_env(vps, app_dir: str, app_port: int):
     """Merges required runtime vars into the app's .env without touching anything
     already there — a preserved .env from a prior deploy (_restore_persistent_state) or
-    whatever the zip shipped both win over these. Only PORT, NODE_ENV and, when the file
-    has no JWT_SECRET at all yet, a generated one are ever added."""
+    whatever the zip shipped both win over these. Only PORT, NODE_ENV, a NODE_OPTIONS
+    entry loading the listen-port shim, and (when the file has no JWT_SECRET at all yet) a
+    generated one are ever added."""
     session = get_ssh_session(vps)
     session.connect()
     try:
+        _install_port_shim(session)
         existing = session.run(f"test -f {app_dir}/.env && cat {app_dir}/.env || true")
         keys = {}
         order = []
@@ -209,6 +248,16 @@ def _ensure_node_env(vps, app_dir: str, app_port: int):
         if "NODE_ENV" not in keys:
             keys["NODE_ENV"] = "production"
             order.append("NODE_ENV")
+            changed = True
+        # Load the shim via NODE_OPTIONS. systemd exports EnvironmentFile vars into the
+        # process environment before exec, so node reads this at launch (dotenv reading it
+        # again later is harmless). Preserve any NODE_OPTIONS the funnel shipped.
+        require_opt = f"--require {_PORT_SHIM_PATH}"
+        if _PORT_SHIM_PATH not in keys.get("NODE_OPTIONS", ""):
+            existing_opts = keys.get("NODE_OPTIONS", "").strip()
+            keys["NODE_OPTIONS"] = f"{require_opt} {existing_opts}".strip()
+            if "NODE_OPTIONS" not in order:
+                order.append("NODE_OPTIONS")
             changed = True
         if "JWT_SECRET" not in keys:
             keys["JWT_SECRET"] = secrets.token_urlsafe(48)
