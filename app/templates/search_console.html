@@ -37,17 +37,24 @@
     <div class="text-sm text-red-400 break-all">{{ error }}</div>
   {% elif sites %}
     <div class="flex items-center gap-2 flex-wrap mb-3">
-      <select id="filter" class="input !w-auto text-xs">
-        <option value="all">Mostrar: todos</option>
+      <input id="search" type="search" placeholder="Buscar domínio..." class="input !w-48 text-xs">
+      <select id="f-safety" class="input !w-auto text-xs" title="Safe Browsing">
+        <option value="all">Segurança: todos</option>
         <option value="flagged">Só sinalizados</option>
         <option value="clean">Só normais</option>
-        <option value="in_gsc">Só no Search Console</option>
-        <option value="missing">Só fora do Search Console</option>
+      </select>
+      <select id="f-gsc" class="input !w-auto text-xs" title="Search Console">
+        <option value="all">Search Console: todos</option>
+        <option value="ok">No Search Console</option>
+        <option value="unverified">Não verificados</option>
+        <option value="missing">Fora do Search Console</option>
       </select>
       <select id="sort" class="input !w-auto text-xs">
         <option value="az">Ordem: A–Z</option>
+        <option value="za">Ordem: Z–A</option>
         <option value="flagged">Sinalizados primeiro</option>
         <option value="clean">Normais primeiro</option>
+        <option value="missing">Fora do Search Console primeiro</option>
       </select>
       <div class="ml-auto flex gap-2 flex-wrap">
         <button id="add-btn" class="btn bg-emerald-800 hover:bg-emerald-700 text-xs disabled:opacity-40" disabled>Adicionar (<span id="add-count">0</span>)</button>
@@ -58,13 +65,13 @@
 
     <label class="flex items-center gap-2 text-xs text-zinc-400 pb-2 border-b border-zinc-800">
       <input type="checkbox" id="select-all"> Selecionar todos os visíveis
-      <span id="sel-info" class="ml-auto"></span>
+      <span class="ml-auto"><span id="shown-info"></span> <span id="sel-info"></span></span>
     </label>
 
     <div id="rows">
       {% for s in sites %}
         <div class="site-row flex items-center gap-3 text-sm border-b border-zinc-800 py-2"
-             data-domain="{{ s.domain }}" data-in-gsc="{{ 1 if s.in_gsc else 0 }}"
+             data-domain="{{ s.domain }}" data-in-gsc="{{ 1 if s.in_gsc else 0 }}" data-state="{{ s.state }}"
              data-addable="{{ 1 if (s.panel_id and s.state != 'ok') else 0 }}"
              data-job="{{ s.gsc_status }}">
           <input type="checkbox" class="site-check" value="{{ s.domain }}">
@@ -138,25 +145,34 @@
   const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json());
 
   // ── filter + sort ──
+  // Filters combine (AND): search text + Safe Browsing + Search Console state; the sort
+  // is independent and always falls back to A–Z within equal keys.
   function applyView() {
-    const f = $("filter").value, s = $("sort").value;
+    const q = $("search").value.trim().toLowerCase();
+    const safety = $("f-safety").value, gsc = $("f-gsc").value, s = $("sort").value;
     let shown = 0;
     rows().forEach(row => {
-      const flagged = isFlagged(row), inGsc = row.dataset.inGsc === "1";
-      const visible = f === "all" || (f === "flagged" && flagged) || (f === "clean" && !flagged)
-        || (f === "in_gsc" && inGsc) || (f === "missing" && !inGsc);
+      const flagged = isFlagged(row);
+      const visible = (!q || row.dataset.domain.includes(q))
+        && (safety === "all" || (safety === "flagged") === flagged)
+        && (gsc === "all" || row.dataset.state === gsc);
       row.classList.toggle("hidden", !visible);
       if (visible) shown++;
     });
     const list = $("rows");
-    const key = (r) => s === "flagged" ? (isFlagged(r) ? 0 : 1) : s === "clean" ? (isFlagged(r) ? 1 : 0) : 0;
-    rows().sort((a, b) => key(a) - key(b) || a.dataset.domain.localeCompare(b.dataset.domain))
+    const key = (r) => s === "flagged" ? (isFlagged(r) ? 0 : 1)
+      : s === "clean" ? (isFlagged(r) ? 1 : 0)
+      : s === "missing" ? (r.dataset.state === "missing" ? 0 : 1) : 0;
+    const dir = s === "za" ? -1 : 1;
+    rows().sort((a, b) => key(a) - key(b) || dir * a.dataset.domain.localeCompare(b.dataset.domain))
       .forEach(r => list.appendChild(r));
     $("empty").classList.toggle("hidden", shown > 0);
+    $("shown-info").textContent = shown === rows().length ? "" : `mostrando ${shown} de ${rows().length}`;
     refreshSelection();
   }
-  $("filter")?.addEventListener("change", applyView);
-  $("sort")?.addEventListener("change", applyView);
+  ["search", "f-safety", "f-gsc", "sort"].forEach(id => {
+    $(id)?.addEventListener(id === "search" ? "input" : "change", applyView);
+  });
 
   // ── selection ──
   function refreshSelection() {
@@ -288,6 +304,6 @@
     selectedRows().filter(r => r.dataset.inGsc === "1").forEach(r => window.open(reviewMap[r.dataset.domain], "_blank", "noopener"));
   });
 
-  if ($("filter")) applyView();
+  if ($("search")) applyView();
 </script>
 {% endblock %}
