@@ -70,21 +70,50 @@ class NamecheapProvider(RegistrarProvider):
             raise RuntimeError(f"Falha ao registrar {domain} via Namecheap")
         return result.attrib.get("DomainID", "")
 
-    def set_dns_a(self, domain: str, ip_address: str) -> None:
+    def _get_hosts(self, domain: str) -> list[dict]:
         sld, _, tld = domain.partition(".")
-        extra = {
-            "SLD": sld,
-            "TLD": tld,
-            "HostName1": "@",
-            "RecordType1": "A",
-            "Address1": ip_address,
-            "TTL1": "1800",
-            "HostName2": "www",
-            "RecordType2": "A",
-            "Address2": ip_address,
-            "TTL2": "1800",
-        }
+        root = self._call("namecheap.domains.dns.getHosts", {"SLD": sld, "TLD": tld})
+        return [
+            {
+                "Name": h.attrib.get("Name", ""),
+                "Type": h.attrib.get("Type", ""),
+                "Address": h.attrib.get("Address", ""),
+                "MXPref": h.attrib.get("MXPref", "10"),
+                "TTL": h.attrib.get("TTL", "1800"),
+            }
+            for h in root.iter(f"{NS}host")
+        ]
+
+    def _set_hosts(self, domain: str, hosts: list[dict]) -> None:
+        # setHosts replaces the whole record set, so callers must pass every record to keep.
+        sld, _, tld = domain.partition(".")
+        extra = {"SLD": sld, "TLD": tld}
+        for i, h in enumerate(hosts, start=1):
+            extra[f"HostName{i}"] = h["Name"]
+            extra[f"RecordType{i}"] = h["Type"]
+            extra[f"Address{i}"] = h["Address"]
+            extra[f"TTL{i}"] = h.get("TTL") or "1800"
+            if h["Type"] == "MX":
+                extra[f"MXPref{i}"] = h.get("MXPref") or "10"
+        if any(h["Type"] == "MX" for h in hosts):
+            extra["EmailType"] = "MX"
         self._call("namecheap.domains.dns.setHosts", extra)
+
+    def set_dns_a(self, domain: str, ip_address: str) -> None:
+        # Drop only what would conflict with the new A records (parking-page CNAME/URL
+        # redirects on @ and www); keep the rest, e.g. the Search Console TXT record.
+        conflicting = {"A", "AAAA", "CNAME", "URL", "URL301", "URLFRAME"}
+        hosts = [h for h in self._get_hosts(domain) if not (h["Name"] in ("@", "www") and h["Type"] in conflicting)]
+        hosts.append({"Name": "@", "Type": "A", "Address": ip_address, "TTL": "1800"})
+        hosts.append({"Name": "www", "Type": "A", "Address": ip_address, "TTL": "1800"})
+        self._set_hosts(domain, hosts)
+
+    def add_txt_record(self, domain: str, value: str) -> None:
+        hosts = self._get_hosts(domain)
+        if any(h["Type"] == "TXT" and h["Name"] == "@" and h["Address"] == value for h in hosts):
+            return
+        hosts.append({"Name": "@", "Type": "TXT", "Address": value, "TTL": "1800"})
+        self._set_hosts(domain, hosts)
 
     def _contact_params(self):
         c = self.secret.get("contact", {}) or {}

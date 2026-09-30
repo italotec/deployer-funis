@@ -20,3 +20,6 @@ class MockRegistrarProvider(RegistrarProvider):
 
     def set_dns_a(self, domain: str, ip_address: str) -> None:
         return None
+
+    def add_txt_record(self, domain: str, value: str) -> None:
+        return None

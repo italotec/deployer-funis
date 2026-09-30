@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_gsc.html" import gsc_badge, gsc_button %}
 {% block content %}
 <div class="card mb-4">
   <div class="flex items-center justify-between">
@@ -19,7 +20,13 @@
     <div class="text-xs text-zinc-500 mt-1">Porta local (Node): {{ dep.app_port }}</div>
   {% endif %}
 
-  <div class="flex gap-2 mt-3">
+  {% if dep.domain and dep.domain.gsc_message and dep.domain.gsc_status in ('pending', 'error') %}
+    <div class="text-xs text-yellow-500 mt-2 break-all">{{ dep.domain.gsc_message }}</div>
+  {% endif %}
+
+  <div class="flex gap-2 mt-3 items-center flex-wrap">
+    {{ gsc_badge(dep.domain) if dep.domain }}
+    {{ gsc_button(dep.domain, url_for('deployments.deployment_detail', deployment_id=dep.id)) }}
     <form method="post" action="{{ url_for('deployments.retry_deployment', deployment_id=dep.id) }}">
       <button class="btn bg-yellow-700 hover:bg-yellow-600 text-xs" type="submit">Tentar novamente</button>
     </form>

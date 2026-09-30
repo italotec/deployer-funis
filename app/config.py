@@ -29,6 +29,14 @@ class Config:
     # Let's Encrypt registration email (certbot --non-interactive -m <email>)
     LE_EMAIL = os.getenv("LE_EMAIL", "")
 
+    # Google Search Console: service-account JSON key, and an optional Google account
+    # e-mail that is added as owner of every verified domain so it shows in the GSC UI.
+    GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "")
+    GSC_OWNER_EMAIL = os.getenv("GSC_OWNER_EMAIL", "")
+
+    # Google Safe Browsing API key (Google Cloud → APIs → "Safe Browsing API").
+    SAFE_BROWSING_API_KEY = os.getenv("SAFE_BROWSING_API_KEY", "")
+
     FUNNELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "funnels")
     DEPLOY_LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "deploy_logs")
 

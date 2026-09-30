@@ -146,6 +146,11 @@ class Domain(db.Model):
     # registering | registered | dns_set | error
 
     last_message = db.Column(db.Text, default="", nullable=False)
+
+    gsc_status = db.Column(db.String(16), default="", nullable=False)
+    # "" (never tried) | running | pending (TXT set, waiting on DNS/user) | verified | error
+    gsc_message = db.Column(db.Text, default="", nullable=False)
+
     created_at = db.Column(db.DateTime, default=_now_sp, nullable=False)
 
 

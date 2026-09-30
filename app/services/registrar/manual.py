@@ -20,3 +20,6 @@ class ManualRegistrarProvider(RegistrarProvider):
 
     def set_dns_a(self, domain: str, ip_address: str) -> None:
         return None
+
+    def add_txt_record(self, domain: str, value: str) -> None:
+        raise NotImplementedError("Domínio externo — o DNS é seu, adicione o registro TXT manualmente.")

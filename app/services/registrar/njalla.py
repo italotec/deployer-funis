@@ -66,6 +66,12 @@ class NjallaProvider(RegistrarProvider):
         self._upsert_a_record(domain, "@", ip_address)
         self._upsert_a_record(domain, "www", ip_address)
 
+    def add_txt_record(self, domain: str, value: str) -> None:
+        existing = self._call("list-records", {"domain": domain}).get("records", [])
+        if any(r.get("type") == "TXT" and r.get("name") == "@" and r.get("content") == value for r in existing):
+            return
+        self._call("add-record", {"domain": domain, "type": "TXT", "name": "@", "content": value, "ttl": 10800})
+
     def get_status(self, domain: str) -> str:
         result = self._call("get-domain", {"domain": domain})
         return str(result.get("status", ""))

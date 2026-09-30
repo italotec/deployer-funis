@@ -31,6 +31,7 @@ def create_app():
     from .routes.domains import bp as domains_bp
     from .routes.funnels import bp as funnels_bp
     from .routes.deployments import bp as deployments_bp, handle_deployment_ws
+    from .routes.search_console import bp as search_console_bp
     from .routes.admin import bp as admin_bp
     from .routes.api import bp as api_bp
 
@@ -41,6 +42,7 @@ def create_app():
     app.register_blueprint(domains_bp)
     app.register_blueprint(funnels_bp)
     app.register_blueprint(deployments_bp)
+    app.register_blueprint(search_console_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
 
@@ -100,9 +102,20 @@ def create_app():
             """))
             db.session.commit()
 
+        if "gsc_status" not in existing_domain_columns:
+            db.session.execute(db.text("ALTER TABLE domain ADD COLUMN gsc_status VARCHAR(16) NOT NULL DEFAULT ''"))
+        if "gsc_message" not in existing_domain_columns:
+            db.session.execute(db.text("ALTER TABLE domain ADD COLUMN gsc_message TEXT NOT NULL DEFAULT ''"))
+        db.session.commit()
+
         # Recover state left behind by a crash/restart — in-process threads die with
         # the process, so anything mid-flight is stuck forever unless marked as failed here.
-        from .models import Vps, Deployment, DeployBatch
+        from .models import Vps, Deployment, DeployBatch, Domain
+
+        stuck_gsc = Domain.query.filter(Domain.gsc_status == "running").all()
+        for d in stuck_gsc:
+            d.gsc_status = "error"
+            d.gsc_message = "Interrompido: servidor reiniciou. Tente novamente."
 
         stuck_vps = Vps.query.filter(Vps.status == "provisioning").all()
         for v in stuck_vps:
@@ -118,7 +131,7 @@ def create_app():
         for b in stuck_batches:
             b.status = "done_with_errors"
 
-        if stuck_vps or stuck_deployments or stuck_batches:
+        if stuck_gsc or stuck_vps or stuck_deployments or stuck_batches:
             db.session.commit()
 
         # Seed admin df/df

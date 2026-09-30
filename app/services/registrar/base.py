@@ -33,6 +33,11 @@ class RegistrarProvider(ABC):
         """Point the domain's A record (root + www) at ip_address."""
         ...
 
+    def add_txt_record(self, domain: str, value: str) -> None:
+        """Add a TXT record with `value` on the domain root, keeping every other record.
+        Must be idempotent — adding a value that already exists is a no-op."""
+        raise NotImplementedError("Este registrador não suporta criar registros TXT pela API.")
+
     def get_status(self, domain: str) -> str:
         """Provider-side status of a domain already ordered on this account.
 

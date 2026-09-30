@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+    <div>
+      <div class="font-semibold">Domínios no Search Console</div>
+      <div id="sb-status" class="text-xs text-zinc-500">
+        {% if safe_browsing_enabled %}Verificando Safe Browsing...{% else %}Safe Browsing desativado — defina SAFE_BROWSING_API_KEY no .env.{% endif %}
+      </div>
+    </div>
+    <button id="review-btn" class="btn bg-yellow-700 hover:bg-yellow-600 text-xs disabled:opacity-40" disabled>Enviar para revisão (<span id="sel-count">0</span>)</button>
+  </div>
+
+  {% if error %}
+    <div class="text-sm text-red-400 break-all">{{ error }}</div>
+  {% elif sites %}
+    <div class="space-y-1">
+      <label class="flex items-center gap-2 text-xs text-zinc-400 pb-2 border-b border-zinc-800">
+        <input type="checkbox" id="select-all"> Selecionar todos
+        <span class="ml-auto">
+          <label class="inline-flex items-center gap-1"><input type="checkbox" id="only-flagged"> só sinalizados</label>
+        </span>
+      </label>
+      {% for s in sites %}
+        <div class="site-row flex items-center gap-3 text-sm border-b border-zinc-800 py-2 last:border-0" data-domain="{{ s.domain }}">
+          <input type="checkbox" class="site-check" value="{{ s.domain }}">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium break-all">{{ s.domain }}</div>
+            <div class="text-xs text-zinc-500">{{ s.site_url }} • {{ s.permission }}</div>
+          </div>
+          <span class="flag hidden badge bg-red-900 text-red-300" title="">⚠ Sinalizado</span>
+          <a href="{{ s.review_url }}" target="_blank" rel="noopener" class="text-xs text-cyan-400 hover:underline">Segurança ↗</a>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-sm text-zinc-500">Nenhum domínio no Search Console ainda.</div>
+  {% endif %}
+</div>
+
+<div id="modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+  <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <div class="font-semibold">Enviar para revisão</div>
+      <button id="modal-close" class="text-zinc-400 hover:text-white">✕</button>
+    </div>
+
+    <div>
+      <label class="text-xs text-zinc-400">Texto do pedido de revisão (o mesmo para todos os domínios selecionados)</label>
+      <textarea id="review-text" rows="8" class="input"></textarea>
+    </div>
+
+    <div>
+      <div class="text-xs text-zinc-400 mb-1">Domínios selecionados</div>
+      <div id="modal-domains" class="space-y-1 text-sm"></div>
+    </div>
+
+    <div class="text-xs text-zinc-500">
+      O Google não tem API para pedir revisão: o botão copia o texto e abre a página de
+      Problemas de segurança de cada domínio — cole o texto lá e clique em "Solicitar revisão".
+    </div>
+
+    <div class="flex gap-2 justify-end">
+      <button id="copy-btn" class="btn bg-zinc-800 hover:bg-zinc-700 text-sm">Copiar texto</button>
+      <button id="open-all-btn" class="btn bg-emerald-800 hover:bg-emerald-700 text-sm">Copiar e abrir todos</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const REVIEW_URLS = {{ (sites | map(attribute='review_url') | list) | tojson }};
+  const DOMAINS = {{ (sites | map(attribute='domain') | list) | tojson }};
+  const reviewUrl = Object.fromEntries(DOMAINS.map((d, i) => [d, REVIEW_URLS[i]]));
+
+  const DEFAULT_TEXT = "Olá,\n\nRevisamos o site e removemos o conteúdo que causou o alerta de segurança. " +
+    "O site está limpo e em conformidade com as políticas do Google. " +
+    "Solicitamos a revisão para que o alerta seja removido.\n\nObrigado.";
+
+  const $ = (id) => document.getElementById(id);
+  const checks = () => [...document.querySelectorAll(".site-check")];
+  const selected = () => checks().filter(c => c.checked).map(c => c.value);
+
+  function refreshSelection() {
+    const n = selected().length;
+    $("sel-count").textContent = n;
+    $("review-btn").disabled = n === 0;
+  }
+  document.addEventListener("change", (e) => {
+    if (e.target.classList.contains("site-check")) refreshSelection();
+  });
+  $("select-all")?.addEventListener("change", (e) => {
+    checks().filter(c => !c.closest(".site-row").classList.contains("hidden")).forEach(c => c.checked = e.target.checked);
+    refreshSelection();
+  });
+  $("only-flagged")?.addEventListener("change", (e) => {
+    document.querySelectorAll(".site-row").forEach(row => {
+      const flagged = !row.querySelector(".flag").classList.contains("hidden");
+      row.classList.toggle("hidden", e.target.checked && !flagged);
+    });
+  });
+
+  // Safe Browsing flags, loaded after the page so a slow lookup never blocks the list.
+  {% if safe_browsing_enabled and sites %}
+  fetch("{{ url_for('search_console.safe_browsing_check') }}", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({domains: DOMAINS}),
+  }).then(r => r.json()).then(data => {
+    if (!data.ok) { $("sb-status").textContent = "Safe Browsing: " + data.message; return; }
+    const flagged = data.flagged;
+    let count = 0;
+    document.querySelectorAll(".site-row").forEach(row => {
+      const threats = flagged[row.dataset.domain];
+      if (!threats) return;
+      count++;
+      const badge = row.querySelector(".flag");
+      badge.classList.remove("hidden");
+      badge.title = threats.join(", ");
+      row.classList.add("bg-red-950/20");
+    });
+    $("sb-status").textContent = count
+      ? `⚠ ${count} domínio(s) sinalizado(s) no Safe Browsing.`
+      : "Nenhum domínio sinalizado no Safe Browsing.";
+  }).catch(() => { $("sb-status").textContent = "Falha ao consultar o Safe Browsing."; });
+  {% endif %}
+
+  // Review modal
+  $("review-btn").addEventListener("click", () => {
+    let saved = "";
+    try { saved = localStorage.getItem("gsc_review_text") || ""; } catch (e) {}
+    $("review-text").value = saved || DEFAULT_TEXT;
+    $("modal-domains").innerHTML = "";
+    selected().forEach(d => {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between border-b border-zinc-800 pb-1";
+      const name = document.createElement("span"); name.textContent = d;
+      const link = document.createElement("a");
+      link.href = reviewUrl[d]; link.target = "_blank"; link.rel = "noopener";
+      link.className = "text-xs text-cyan-400 hover:underline"; link.textContent = "Abrir no Search Console ↗";
+      row.append(name, link);
+      $("modal-domains").append(row);
+    });
+    $("modal").classList.remove("hidden");
+  });
+  $("modal-close").addEventListener("click", () => $("modal").classList.add("hidden"));
+  $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) $("modal").classList.add("hidden"); });
+
+  async function copyText() {
+    const text = $("review-text").value;
+    try { localStorage.setItem("gsc_review_text", text); } catch (e) {}
+    try { await navigator.clipboard.writeText(text); } catch (e) { $("review-text").select(); document.execCommand("copy"); }
+  }
+  $("copy-btn").addEventListener("click", async () => {
+    await copyText();
+    $("copy-btn").textContent = "Copiado ✓";
+    setTimeout(() => $("copy-btn").textContent = "Copiar texto", 1500);
+  });
+  $("open-all-btn").addEventListener("click", async () => {
+    await copyText();
+    // Browsers may block extra tabs; the per-domain links above always work.
+    selected().forEach(d => window.open(reviewUrl[d], "_blank", "noopener"));
+  });
+</script>
+{% endblock %}

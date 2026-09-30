@@ -1,0 +1,23 @@
+{# Search Console button + status badge for one domain. `back` is the path to return to. #}
+{% macro gsc_badge(d) %}
+  {% if d.gsc_status == 'verified' %}
+    <span class="badge bg-emerald-900 text-emerald-300" title="{{ d.gsc_message }}">GSC ✓</span>
+  {% elif d.gsc_status == 'running' %}
+    <span class="badge bg-zinc-800 text-zinc-200" title="{{ d.gsc_message }}">GSC…</span>
+  {% elif d.gsc_status == 'pending' %}
+    <span class="badge bg-yellow-900 text-yellow-300" title="{{ d.gsc_message }}">GSC pendente</span>
+  {% elif d.gsc_status == 'error' %}
+    <span class="badge bg-red-900 text-red-300" title="{{ d.gsc_message }}">GSC erro</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro gsc_button(d, back) %}
+  {% if d and d.gsc_status not in ('verified', 'running') %}
+    <form method="post" action="{{ url_for('domains.add_to_search_console', domain_id=d.id) }}">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button class="btn bg-blue-800 hover:bg-blue-700 text-xs" type="submit">
+        {{ 'Tentar Search Console de novo' if d.gsc_status in ('pending', 'error') else 'Adicionar ao Search Console' }}
+      </button>
+    </form>
+  {% endif %}
+{% endmacro %}

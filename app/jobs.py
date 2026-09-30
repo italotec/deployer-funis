@@ -9,6 +9,7 @@ from .models import Vps, Domain, Funnel, DeployBatch, Deployment, ProviderCreden
 from .services.vps import get_vps_provider
 from .services.registrar import get_registrar_provider
 from .services.deploy import provisioner, deployer, ports
+from .services.google.search_console import SearchConsoleClient
 
 
 def _deploy_log_path(app, deployment_id):
@@ -24,6 +25,28 @@ def append_deploy_log(app, deployment_id, msg):
 def reset_deploy_log(app, deployment_id):
     os.makedirs(app.config["DEPLOY_LOGS_DIR"], exist_ok=True)
     open(_deploy_log_path(app, deployment_id), "w", encoding="utf-8").close()
+
+
+def _registrar_for_domain(domain):
+    if domain.registrar == "manual":
+        return get_registrar_provider("manual", {})
+
+    # Authenticate as the exact account this domain belongs to. Falling back to
+    # the first credential of the provider only covers legacy rows with no link;
+    # with multiple accounts of the same registrar, the wrong one can't manage
+    # the domain (Njalla returns "Permission denied" on its DNS records).
+    cred = None
+    if domain.credential_id:
+        cred = ProviderCredential.query.filter_by(
+            id=domain.credential_id, user_id=domain.user_id, kind="registrar"
+        ).first()
+    if not cred:
+        cred = ProviderCredential.query.filter_by(
+            user_id=domain.user_id, kind="registrar", provider=domain.registrar
+        ).order_by(ProviderCredential.id).first()
+    if not cred:
+        raise RuntimeError(f"Nenhuma credencial cadastrada para o registrador '{domain.registrar}'.")
+    return get_registrar_provider(cred.provider, cred.get_secret())
 
 
 def _run_single_deployment(app, deployment_id: int) -> bool:
@@ -45,25 +68,7 @@ def _run_single_deployment(app, deployment_id: int) -> bool:
             db.session.commit()
 
     try:
-        if domain.registrar == "manual":
-            registrar_provider = get_registrar_provider("manual", {})
-        else:
-            # Authenticate as the exact account this domain belongs to. Falling back to
-            # the first credential of the provider only covers legacy rows with no link;
-            # with multiple accounts of the same registrar, the wrong one can't manage
-            # the domain (Njalla returns "Permission denied" on its DNS records).
-            cred = None
-            if domain.credential_id:
-                cred = ProviderCredential.query.filter_by(
-                    id=domain.credential_id, user_id=dep.user_id, kind="registrar"
-                ).first()
-            if not cred:
-                cred = ProviderCredential.query.filter_by(
-                    user_id=dep.user_id, kind="registrar", provider=domain.registrar
-                ).order_by(ProviderCredential.id).first()
-            if not cred:
-                raise RuntimeError(f"Nenhuma credencial cadastrada para o registrador '{domain.registrar}'.")
-            registrar_provider = get_registrar_provider(cred.provider, cred.get_secret())
+        registrar_provider = _registrar_for_domain(domain)
 
         if domain.status == "registering":
             dep.status = "registering_domain"
@@ -191,6 +196,72 @@ def start_teardown_deployment_job(deployment_id: int):
             log_path = _deploy_log_path(app, deployment_id)
             if os.path.exists(log_path):
                 os.remove(log_path)
+
+    threading.Thread(target=runner, daemon=True).start()
+
+
+GSC_VERIFY_ATTEMPTS = 10
+GSC_VERIFY_INTERVAL = 15  # seconds
+
+
+def start_gsc_add_job(domain_id: int):
+    """Add a domain to Google Search Console: get Google's DNS token, publish it as a TXT
+    record through the registrar API, ask Google to verify, then register the property.
+    Safe to run again — every step is idempotent, and it tries verifying first so a
+    domain whose TXT is already in place (or was added by hand) completes at once."""
+    app = current_app._get_current_object()
+
+    def set_state(status, message):
+        d = db.session.get(Domain, domain_id)
+        if d:
+            d.gsc_status = status
+            d.gsc_message = message
+            db.session.commit()
+
+    def runner():
+        with app.app_context():
+            domain = db.session.get(Domain, domain_id)
+            if not domain:
+                return
+            name = domain.name
+            try:
+                client = SearchConsoleClient(
+                    app.config["GOOGLE_SERVICE_ACCOUNT_FILE"], app.config["GSC_OWNER_EMAIL"]
+                )
+
+                verified = client.verify(name)
+                if not verified:
+                    token = client.get_dns_token(name)
+                    set_state("running", "Adicionando registro TXT no DNS...")
+                    try:
+                        _registrar_for_domain(domain).add_txt_record(name, token)
+                    except NotImplementedError:
+                        set_state(
+                            "pending",
+                            f"Adicione um registro TXT na raiz (@) de {name} com o valor: {token} "
+                            "— depois clique em Search Console de novo.",
+                        )
+                        return
+
+                    set_state("running", "TXT adicionado. Aguardando o Google enxergar o DNS...")
+                    for _ in range(GSC_VERIFY_ATTEMPTS):
+                        time.sleep(GSC_VERIFY_INTERVAL)
+                        if client.verify(name):
+                            verified = True
+                            break
+
+                if not verified:
+                    set_state(
+                        "pending",
+                        "TXT adicionado, mas o DNS ainda não propagou. Tente novamente em alguns minutos.",
+                    )
+                    return
+
+                client.add_site(name)
+                set_state("verified", "Adicionado ao Search Console.")
+            except Exception as exc:
+                db.session.rollback()
+                set_state("error", f"Erro: {exc}")
 
     threading.Thread(target=runner, daemon=True).start()
 

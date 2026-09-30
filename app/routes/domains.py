@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 
-from .. import db
+from .. import db, jobs
 from ..models import Domain, Deployment, ProviderCredential
 from ..services.registrar import get_registrar_provider
 
@@ -95,6 +95,28 @@ def delete_domain(domain_id):
         "success",
     )
     return redirect(url_for("domains.domains_page"))
+
+
+@bp.route("/<int:domain_id>/search-console", methods=["POST"])
+@login_required
+def add_to_search_console(domain_id):
+    domain = Domain.query.filter_by(id=domain_id, user_id=current_user.id).first_or_404()
+
+    back = request.form.get("back", "")
+    if not back.startswith("/") or back.startswith("//"):
+        back = url_for("domains.domains_page")
+
+    if domain.gsc_status in ("running", "verified"):
+        flash(f"{domain.name}: {domain.gsc_message or 'já processado.'}", "success")
+        return redirect(back)
+
+    domain.gsc_status = "running"
+    domain.gsc_message = "Iniciando..."
+    db.session.commit()
+    jobs.start_gsc_add_job(domain.id)
+
+    flash(f"Adicionando {domain.name} ao Google Search Console... (pode levar alguns minutos)", "success")
+    return redirect(back)
 
 
 @bp.route("/registrar", methods=["POST"])

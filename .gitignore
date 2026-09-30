@@ -6,3 +6,5 @@ instance/
 *.env
 .mcp.json
 .playwright-mcp/
+
+circular-signal-*.json
