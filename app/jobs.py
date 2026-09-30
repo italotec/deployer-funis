@@ -9,7 +9,7 @@ from .models import Vps, Domain, Funnel, DeployBatch, Deployment, ProviderCreden
 from .services.vps import get_vps_provider
 from .services.registrar import get_registrar_provider
 from .services.deploy import provisioner, deployer, ports
-from .services.google.search_console import SearchConsoleClient
+from .services.google import accounts
 
 
 def _deploy_log_path(app, deployment_id):
@@ -225,9 +225,8 @@ def start_gsc_add_job(domain_id: int):
                 return
             name = domain.name
             try:
-                client = SearchConsoleClient(
-                    app.config["GOOGLE_SERVICE_ACCOUNT_FILE"], app.config["GSC_OWNER_EMAIL"]
-                )
+                # The user's own Google account when connected, else the service account.
+                client, _account = accounts.client_for_user(app.config, domain.user_id)
 
                 verified = client.verify(name)
                 if not verified:

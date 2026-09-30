@@ -22,7 +22,10 @@ def _build_provider_meta():
 @bp.route("/")
 @login_required
 def credentials_page():
-    creds = ProviderCredential.query.filter_by(user_id=current_user.id).order_by(ProviderCredential.created_at.desc()).all()
+    # The connected Google account (kind "google") is managed from the Search Console page.
+    creds = ProviderCredential.query.filter(
+        ProviderCredential.user_id == current_user.id, ProviderCredential.kind != "google"
+    ).order_by(ProviderCredential.created_at.desc()).all()
     return render_template(
         "credentials.html",
         title="Credenciais",

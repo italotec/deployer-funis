@@ -32,23 +32,52 @@ class SearchConsoleClient:
     proving ownership with a DNS TXT record. Authenticates as a service account, signing
     the OAuth JWT itself so no Google client library is needed."""
 
-    def __init__(self, key_file: str, owner_email: str = ""):
-        if not key_file or not os.path.isfile(key_file):
-            raise SearchConsoleError(
-                "Chave da conta de serviço do Google não encontrada. "
-                "Defina GOOGLE_SERVICE_ACCOUNT_FILE no .env com o caminho do arquivo JSON."
-            )
-        with open(key_file, "r", encoding="utf-8") as f:
-            self._key = json.load(f)
+    def __init__(self, key_file: str = "", owner_email: str = "", oauth: dict | None = None):
+        """Authenticates either as a service account (`key_file`) or, when `oauth` is given
+        ({client_id, client_secret, refresh_token}), as the Google user who connected
+        their account — that user then verifies and owns the domains themself."""
+        self._oauth = oauth
+        self._key = None
+        if not oauth:
+            if not key_file or not os.path.isfile(key_file):
+                raise SearchConsoleError(
+                    "Chave da conta de serviço do Google não encontrada. "
+                    "Defina GOOGLE_SERVICE_ACCOUNT_FILE no .env com o caminho do arquivo JSON."
+                )
+            with open(key_file, "r", encoding="utf-8") as f:
+                self._key = json.load(f)
         self.owner_email = owner_email
         self._token = ""
         self._token_exp = 0.0
         self._lock = threading.Lock()
 
+    def _refresh_oauth_token(self) -> str:
+        r = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": self._oauth["client_id"],
+                "client_secret": self._oauth["client_secret"],
+                "refresh_token": self._oauth["refresh_token"],
+            },
+            timeout=30,
+        )
+        data = r.json()
+        if "access_token" not in data:
+            raise SearchConsoleError(
+                "Google recusou o acesso da conta conectada "
+                f"({data.get('error_description') or data.get('error')}). Reconecte a conta Google."
+            )
+        self._token = data["access_token"]
+        self._token_exp = time.time() + int(data.get("expires_in", 3600))
+        return self._token
+
     def _access_token(self) -> str:
         with self._lock:
             if self._token and time.time() < self._token_exp - 60:
                 return self._token
+            if self._oauth:
+                return self._refresh_oauth_token()
             now = int(time.time())
             unsigned = _b64url({"alg": "RS256", "typ": "JWT"}) + "." + _b64url({
                 "iss": self._key["client_email"],

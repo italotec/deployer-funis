@@ -34,6 +34,13 @@ class Config:
     GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "")
     GSC_OWNER_EMAIL = os.getenv("GSC_OWNER_EMAIL", "")
 
+    # Google OAuth client (type "Web application") so each user can connect their own
+    # Google account. The redirect URI must be registered on the client exactly as
+    # <public base URL>/search-console/oauth/callback (or set GOOGLE_OAUTH_REDIRECT_URI).
+    GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    GOOGLE_OAUTH_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "")
+
     # Google Safe Browsing API key (Google Cloud → APIs → "Safe Browsing API").
     SAFE_BROWSING_API_KEY = os.getenv("SAFE_BROWSING_API_KEY", "")
 
