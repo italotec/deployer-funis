@@ -26,40 +26,69 @@
 </div>
 
 <div class="card">
-  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-    <div>
-      <div class="font-semibold">Domínios no Search Console</div>
-      <div id="sb-status" class="text-xs text-zinc-500">
-        {% if safe_browsing_enabled %}Verificando Safe Browsing...{% else %}Safe Browsing desativado — defina SAFE_BROWSING_API_KEY no .env.{% endif %}
-      </div>
+  <div class="mb-3">
+    <div class="font-semibold">Domínios <span class="text-zinc-500 text-sm font-normal">({{ sites|length }})</span></div>
+    <div id="sb-status" class="text-xs text-zinc-500">
+      {% if safe_browsing_enabled %}Verificando Safe Browsing...{% else %}Safe Browsing desativado — defina SAFE_BROWSING_API_KEY no .env.{% endif %}
     </div>
-    <button id="review-btn" class="btn bg-yellow-700 hover:bg-yellow-600 text-xs disabled:opacity-40" disabled>Enviar para revisão (<span id="sel-count">0</span>)</button>
   </div>
 
   {% if error %}
     <div class="text-sm text-red-400 break-all">{{ error }}</div>
   {% elif sites %}
-    <div class="space-y-1">
-      <label class="flex items-center gap-2 text-xs text-zinc-400 pb-2 border-b border-zinc-800">
-        <input type="checkbox" id="select-all"> Selecionar todos
-        <span class="ml-auto">
-          <label class="inline-flex items-center gap-1"><input type="checkbox" id="only-flagged"> só sinalizados</label>
-        </span>
-      </label>
+    <div class="flex items-center gap-2 flex-wrap mb-3">
+      <select id="filter" class="input !w-auto text-xs">
+        <option value="all">Mostrar: todos</option>
+        <option value="flagged">Só sinalizados</option>
+        <option value="clean">Só normais</option>
+        <option value="in_gsc">Só no Search Console</option>
+        <option value="missing">Só fora do Search Console</option>
+      </select>
+      <select id="sort" class="input !w-auto text-xs">
+        <option value="az">Ordem: A–Z</option>
+        <option value="flagged">Sinalizados primeiro</option>
+        <option value="clean">Normais primeiro</option>
+      </select>
+      <div class="ml-auto flex gap-2 flex-wrap">
+        <button id="add-btn" class="btn bg-emerald-800 hover:bg-emerald-700 text-xs disabled:opacity-40" disabled>Adicionar (<span id="add-count">0</span>)</button>
+        <button id="review-btn" class="btn bg-yellow-700 hover:bg-yellow-600 text-xs disabled:opacity-40" disabled>Enviar para revisão (<span id="review-count">0</span>)</button>
+        <button id="remove-btn" class="btn bg-red-900 hover:bg-red-800 text-xs disabled:opacity-40" disabled>Remover (<span id="remove-count">0</span>)</button>
+      </div>
+    </div>
+
+    <label class="flex items-center gap-2 text-xs text-zinc-400 pb-2 border-b border-zinc-800">
+      <input type="checkbox" id="select-all"> Selecionar todos os visíveis
+      <span id="sel-info" class="ml-auto"></span>
+    </label>
+
+    <div id="rows">
       {% for s in sites %}
-        <div class="site-row flex items-center gap-3 text-sm border-b border-zinc-800 py-2 last:border-0" data-domain="{{ s.domain }}">
+        <div class="site-row flex items-center gap-3 text-sm border-b border-zinc-800 py-2"
+             data-domain="{{ s.domain }}" data-in-gsc="{{ 1 if s.in_gsc else 0 }}"
+             data-addable="{{ 1 if (s.panel_id and s.state != 'ok') else 0 }}"
+             data-job="{{ s.gsc_status }}">
           <input type="checkbox" class="site-check" value="{{ s.domain }}">
           <div class="flex-1 min-w-0">
             <div class="font-medium break-all">{{ s.domain }}</div>
-            <div class="text-xs text-zinc-500">{{ s.site_url }} • {{ s.permission }}</div>
+            <div class="text-xs text-zinc-500">
+              {% if s.in_gsc %}{{ s.site_url }} • {{ s.permission }}{% else %}Fora do Search Console{% endif %}
+            </div>
+            <div class="job-msg text-xs text-yellow-500 break-all {{ '' if (s.gsc_message and s.gsc_status in ('pending', 'error', 'running')) else 'hidden' }}">{{ s.gsc_message }}</div>
           </div>
           <span class="flag hidden badge bg-red-900 text-red-300" title="">⚠ Sinalizado</span>
-          <a href="{{ s.review_url }}" target="_blank" rel="noopener" class="text-xs text-cyan-400 hover:underline">Segurança ↗</a>
+          {% if s.state == 'unverified' %}<span class="badge bg-yellow-900 text-yellow-300">Não verificado</span>
+          {% elif s.state == 'missing' %}<span class="badge bg-zinc-800 text-zinc-300">Fora</span>
+          {% else %}<span class="badge bg-emerald-900 text-emerald-300">No Search Console</span>{% endif %}
+          <span class="job-badge badge bg-zinc-800 text-zinc-200 {{ '' if s.gsc_status == 'running' else 'hidden' }}">Adicionando…</span>
+          {% if s.in_gsc %}
+            <a href="{{ s.review_url }}" target="_blank" rel="noopener" class="text-xs text-cyan-400 hover:underline whitespace-nowrap">Segurança ↗</a>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
+    <div id="empty" class="hidden text-sm text-zinc-500 py-3">Nenhum domínio neste filtro.</div>
   {% else %}
-    <div class="text-sm text-zinc-500">Nenhum domínio no Search Console ainda.</div>
+    <div class="text-sm text-zinc-500">Nenhum domínio ainda.</div>
   {% endif %}
 </div>
 
@@ -93,48 +122,120 @@
 </div>
 
 <script>
-  const REVIEW_URLS = {{ (sites | map(attribute='review_url') | list) | tojson }};
-  const DOMAINS = {{ (sites | map(attribute='domain') | list) | tojson }};
-  const reviewUrl = Object.fromEntries(DOMAINS.map((d, i) => [d, REVIEW_URLS[i]]));
+  const reviewUrl = {{ (sites | selectattr('in_gsc') | map(attribute='review_url') | list) | tojson }};
+  const reviewDomains = {{ (sites | selectattr('in_gsc') | map(attribute='domain') | list) | tojson }};
+  const reviewMap = Object.fromEntries(reviewDomains.map((d, i) => [d, reviewUrl[i]]));
+  const ALL_DOMAINS = {{ (sites | map(attribute='domain') | list) | tojson }};
 
   const DEFAULT_TEXT = "Olá,\n\nRevisamos o site e removemos o conteúdo que causou o alerta de segurança. " +
     "O site está limpo e em conformidade com as políticas do Google. " +
     "Solicitamos a revisão para que o alerta seja removido.\n\nObrigado.";
 
   const $ = (id) => document.getElementById(id);
-  const checks = () => [...document.querySelectorAll(".site-check")];
-  const selected = () => checks().filter(c => c.checked).map(c => c.value);
+  const rows = () => [...document.querySelectorAll(".site-row")];
+  const isFlagged = (row) => !row.querySelector(".flag").classList.contains("hidden");
+  const selectedRows = () => rows().filter(r => r.querySelector(".site-check").checked);
+  const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json());
 
-  function refreshSelection() {
-    const n = selected().length;
-    $("sel-count").textContent = n;
-    $("review-btn").disabled = n === 0;
+  // ── filter + sort ──
+  function applyView() {
+    const f = $("filter").value, s = $("sort").value;
+    let shown = 0;
+    rows().forEach(row => {
+      const flagged = isFlagged(row), inGsc = row.dataset.inGsc === "1";
+      const visible = f === "all" || (f === "flagged" && flagged) || (f === "clean" && !flagged)
+        || (f === "in_gsc" && inGsc) || (f === "missing" && !inGsc);
+      row.classList.toggle("hidden", !visible);
+      if (visible) shown++;
+    });
+    const list = $("rows");
+    const key = (r) => s === "flagged" ? (isFlagged(r) ? 0 : 1) : s === "clean" ? (isFlagged(r) ? 1 : 0) : 0;
+    rows().sort((a, b) => key(a) - key(b) || a.dataset.domain.localeCompare(b.dataset.domain))
+      .forEach(r => list.appendChild(r));
+    $("empty").classList.toggle("hidden", shown > 0);
+    refreshSelection();
   }
-  document.addEventListener("change", (e) => {
-    if (e.target.classList.contains("site-check")) refreshSelection();
-  });
+  $("filter")?.addEventListener("change", applyView);
+  $("sort")?.addEventListener("change", applyView);
+
+  // ── selection ──
+  function refreshSelection() {
+    const sel = selectedRows();
+    const add = sel.filter(r => r.dataset.addable === "1" && r.dataset.job !== "running");
+    const inGsc = sel.filter(r => r.dataset.inGsc === "1");
+    $("add-count").textContent = add.length;
+    $("review-count").textContent = inGsc.length;
+    $("remove-count").textContent = inGsc.length;
+    $("add-btn").disabled = add.length === 0;
+    $("review-btn").disabled = inGsc.length === 0;
+    $("remove-btn").disabled = inGsc.length === 0;
+    $("sel-info").textContent = sel.length ? `${sel.length} selecionado(s)` : "";
+  }
+  document.addEventListener("change", (e) => { if (e.target.classList.contains("site-check")) refreshSelection(); });
   $("select-all")?.addEventListener("change", (e) => {
-    checks().filter(c => !c.closest(".site-row").classList.contains("hidden")).forEach(c => c.checked = e.target.checked);
+    rows().filter(r => !r.classList.contains("hidden")).forEach(r => r.querySelector(".site-check").checked = e.target.checked);
     refreshSelection();
   });
-  $("only-flagged")?.addEventListener("change", (e) => {
-    document.querySelectorAll(".site-row").forEach(row => {
-      const flagged = !row.querySelector(".flag").classList.contains("hidden");
-      row.classList.toggle("hidden", e.target.checked && !flagged);
-    });
+
+  // ── add / remove ──
+  $("add-btn")?.addEventListener("click", async () => {
+    const doms = selectedRows().filter(r => r.dataset.addable === "1" && r.dataset.job !== "running").map(r => r.dataset.domain);
+    if (!doms.length) return;
+    if (!confirm(`Adicionar ${doms.length} domínio(s) ao Search Console? O painel cria o registro TXT no DNS de cada um.`)) return;
+    $("add-btn").disabled = true;
+    const res = await post("{{ url_for('search_console.bulk_add') }}", {domains: doms});
+    doms.forEach(d => { const r = rowOf(d); if (r) { r.dataset.job = "running"; showJob(r, "running", "Na fila..."); r.querySelector(".site-check").checked = false; } });
+    refreshSelection(); startPolling();
   });
 
-  // Safe Browsing flags, loaded after the page so a slow lookup never blocks the list.
+  $("remove-btn")?.addEventListener("click", async () => {
+    const doms = selectedRows().filter(r => r.dataset.inGsc === "1").map(r => r.dataset.domain);
+    if (!doms.length) return;
+    if (!confirm(`Remover ${doms.length} domínio(s) do Search Console?\n\n${doms.slice(0, 15).join("\n")}${doms.length > 15 ? "\n..." : ""}\n\nA propriedade some da sua conta do Google (o domínio no painel não é apagado).`)) return;
+    $("remove-btn").disabled = true;
+    const res = await post("{{ url_for('search_console.remove') }}", {domains: doms});
+    if (!res.ok) { alert("Erro: " + res.message); refreshSelection(); return; }
+    const failed = Object.entries(res.results).filter(([, v]) => v !== "ok");
+    if (failed.length) alert("Alguns falharam:\n" + failed.map(([d, v]) => `${d}: ${v}`).join("\n"));
+    location.reload();
+  });
+
+  // ── job status polling ──
+  const rowOf = (d) => rows().find(r => r.dataset.domain === d);
+  function showJob(row, status, message) {
+    row.querySelector(".job-badge").classList.toggle("hidden", status !== "running");
+    const msg = row.querySelector(".job-msg");
+    msg.textContent = message || "";
+    msg.classList.toggle("hidden", !(message && ["running", "pending", "error"].includes(status)));
+  }
+  let polling = null;
+  function startPolling() {
+    if (polling) return;
+    polling = setInterval(async () => {
+      let data; try { data = await (await fetch("{{ url_for('search_console.status') }}")).json(); } catch (e) { return; }
+      let anyRunning = false, finished = false;
+      rows().forEach(row => {
+        const st = data[row.dataset.domain];
+        const wasRunning = row.dataset.job === "running";
+        const status = st ? st.status : "";
+        if (status === "running") anyRunning = true;
+        if (wasRunning && status !== "running") finished = true;
+        row.dataset.job = status;
+        showJob(row, status, st ? st.message : "");
+      });
+      if (finished && !anyRunning) { clearInterval(polling); location.reload(); }
+      else if (!anyRunning) { clearInterval(polling); polling = null; }
+    }, 6000);
+  }
+  if (rows().some(r => r.dataset.job === "running")) startPolling();
+
+  // ── Safe Browsing flags ──
   {% if safe_browsing_enabled and sites %}
-  fetch("{{ url_for('search_console.safe_browsing_check') }}", {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({domains: DOMAINS}),
-  }).then(r => r.json()).then(data => {
+  post("{{ url_for('search_console.safe_browsing_check') }}", {domains: ALL_DOMAINS}).then(data => {
     if (!data.ok) { $("sb-status").textContent = "Safe Browsing: " + data.message; return; }
-    const flagged = data.flagged;
     let count = 0;
-    document.querySelectorAll(".site-row").forEach(row => {
-      const threats = flagged[row.dataset.domain];
+    rows().forEach(row => {
+      const threats = data.flagged[row.dataset.domain];
       if (!threats) return;
       count++;
       const badge = row.querySelector(".flag");
@@ -145,44 +246,48 @@
     $("sb-status").textContent = count
       ? `⚠ ${count} domínio(s) sinalizado(s) no Safe Browsing.`
       : "Nenhum domínio sinalizado no Safe Browsing.";
+    applyView();
   }).catch(() => { $("sb-status").textContent = "Falha ao consultar o Safe Browsing."; });
   {% endif %}
 
-  // Review modal
-  $("review-btn").addEventListener("click", () => {
+  // ── review modal ──
+  $("review-btn")?.addEventListener("click", () => {
     let saved = "";
     try { saved = localStorage.getItem("gsc_review_text") || ""; } catch (e) {}
     $("review-text").value = saved || DEFAULT_TEXT;
     $("modal-domains").innerHTML = "";
-    selected().forEach(d => {
+    selectedRows().filter(r => r.dataset.inGsc === "1").forEach(r => {
+      const d = r.dataset.domain;
       const row = document.createElement("div");
       row.className = "flex items-center justify-between border-b border-zinc-800 pb-1";
       const name = document.createElement("span"); name.textContent = d;
       const link = document.createElement("a");
-      link.href = reviewUrl[d]; link.target = "_blank"; link.rel = "noopener";
+      link.href = reviewMap[d]; link.target = "_blank"; link.rel = "noopener";
       link.className = "text-xs text-cyan-400 hover:underline"; link.textContent = "Abrir no Search Console ↗";
       row.append(name, link);
       $("modal-domains").append(row);
     });
     $("modal").classList.remove("hidden");
   });
-  $("modal-close").addEventListener("click", () => $("modal").classList.add("hidden"));
-  $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) $("modal").classList.add("hidden"); });
+  $("modal-close")?.addEventListener("click", () => $("modal").classList.add("hidden"));
+  $("modal")?.addEventListener("click", (e) => { if (e.target === $("modal")) $("modal").classList.add("hidden"); });
 
   async function copyText() {
     const text = $("review-text").value;
     try { localStorage.setItem("gsc_review_text", text); } catch (e) {}
     try { await navigator.clipboard.writeText(text); } catch (e) { $("review-text").select(); document.execCommand("copy"); }
   }
-  $("copy-btn").addEventListener("click", async () => {
+  $("copy-btn")?.addEventListener("click", async () => {
     await copyText();
     $("copy-btn").textContent = "Copiado ✓";
     setTimeout(() => $("copy-btn").textContent = "Copiar texto", 1500);
   });
-  $("open-all-btn").addEventListener("click", async () => {
+  $("open-all-btn")?.addEventListener("click", async () => {
     await copyText();
     // Browsers may block extra tabs; the per-domain links above always work.
-    selected().forEach(d => window.open(reviewUrl[d], "_blank", "noopener"));
+    selectedRows().filter(r => r.dataset.inGsc === "1").forEach(r => window.open(reviewMap[r.dataset.domain], "_blank", "noopener"));
   });
+
+  if ($("filter")) applyView();
 </script>
 {% endblock %}

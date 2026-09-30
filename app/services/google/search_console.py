@@ -150,6 +150,12 @@ class SearchConsoleClient:
             raise SearchConsoleError(f"Erro ao listar propriedades: {self._error_message(r)}")
         return r.json().get("siteEntry", [])
 
+    def delete_site(self, site_url: str) -> None:
+        """Remove a property from this account's Search Console (ownership stays verified)."""
+        r = self._request("DELETE", f"{_SITES_URL}/{quote(site_url, safe='')}")
+        if r.status_code not in (200, 204, 404):
+            raise SearchConsoleError(self._error_message(r))
+
     def add_site(self, domain: str) -> None:
         r = self._request("PUT", f"{_SITES_URL}/{quote(f'sc-domain:{domain}', safe='')}")
         if r.status_code not in (200, 204):

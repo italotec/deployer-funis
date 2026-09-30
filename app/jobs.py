@@ -200,6 +200,7 @@ def start_teardown_deployment_job(deployment_id: int):
     threading.Thread(target=runner, daemon=True).start()
 
 
+_GSC_SLOTS = threading.Semaphore(3)  # bulk adds run a few at a time, not all at once
 GSC_VERIFY_ATTEMPTS = 10
 GSC_VERIFY_INTERVAL = 15  # seconds
 
@@ -219,7 +220,7 @@ def start_gsc_add_job(domain_id: int):
             db.session.commit()
 
     def runner():
-        with app.app_context():
+        with _GSC_SLOTS, app.app_context():
             domain = db.session.get(Domain, domain_id)
             if not domain:
                 return
