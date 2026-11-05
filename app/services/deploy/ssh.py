@@ -13,7 +13,9 @@ def _load_private_key(pem: str):
     """Keys stored on Vps rows aren't always RSA (e.g. ed25519 from ssh-keygen/PuTTYgen),
     so try each key type paramiko supports instead of assuming RSA."""
     last_exc = None
-    for key_cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey, paramiko.DSSKey):
+    key_classes = (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey)
+    key_classes += (paramiko.DSSKey,) if hasattr(paramiko, "DSSKey") else ()
+    for key_cls in key_classes:
         try:
             return key_cls.from_private_key(io.StringIO(pem))
         except paramiko.SSHException as exc:
