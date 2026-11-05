@@ -1,7 +1,10 @@
 import io
 import os
 import shlex
+import tarfile
+import tempfile
 import time
+import uuid
 
 import paramiko
 
@@ -63,16 +66,25 @@ class SSHSession:
         sftp.close()
 
     def upload_dir(self, local_dir: str, remote_dir: str):
-        sftp = self._open_sftp()
+        """Packs local_dir into one tar and extracts it remotely, instead of one SFTP
+        round-trip per file plus one `mkdir` per subdirectory — a funnel with a couple
+        thousand files took hours over a high-latency link that way, since each small
+        file's open/write/close is a separate serialized round-trip."""
         self.run(f"mkdir -p {shlex.quote(remote_dir)}")
-        for root, dirs, files in os.walk(local_dir):
-            rel = os.path.relpath(root, local_dir)
-            remote_root = remote_dir if rel == "." else f"{remote_dir}/{rel.replace(os.sep, '/')}"
-            if rel != ".":
-                self.run(f"mkdir -p {shlex.quote(remote_root)}")
-            for fname in files:
-                sftp.put(os.path.join(root, fname), f"{remote_root}/{fname}")
-        sftp.close()
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tar")
+        os.close(tmp_fd)
+        try:
+            with tarfile.open(tmp_path, "w") as tar:
+                tar.add(local_dir, arcname=".")
+            remote_tmp = f"/tmp/funnel-upload-{uuid.uuid4().hex}.tar"
+            sftp = self._open_sftp()
+            try:
+                sftp.put(tmp_path, remote_tmp)
+            finally:
+                sftp.close()
+            self.run(f"tar -xf {shlex.quote(remote_tmp)} -C {shlex.quote(remote_dir)} && rm -f {shlex.quote(remote_tmp)}")
+        finally:
+            os.remove(tmp_path)
 
     def close(self):
         if self._client:
