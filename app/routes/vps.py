@@ -81,9 +81,10 @@ def add_manual_vps():
     ip = request.form.get("ip", "").strip()
     port = request.form.get("port", type=int) or 22
     password = request.form.get("password", "")
+    private_key = request.form.get("private_key", "").strip()
 
-    if not user or not ip or not password:
-        flash("Preencha usuário, IP e senha.", "error")
+    if not user or not ip or not (password or private_key):
+        flash("Preencha usuário, IP e senha (ou chave privada).", "error")
         return redirect(url_for("vps.vps_page"))
 
     vps = Vps(
@@ -96,7 +97,10 @@ def add_manual_vps():
         status="provisioning",
         last_message="Configurando VPS manual...",
     )
-    vps.set_ssh_password(password)
+    if private_key:
+        vps.set_ssh_key(private_key)
+    else:
+        vps.set_ssh_password(password)
     db.session.add(vps)
     db.session.commit()
 

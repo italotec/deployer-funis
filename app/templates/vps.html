@@ -116,10 +116,14 @@
       </div>
       <div>
         <label class="text-xs text-zinc-400">Senha SSH</label>
-        <input class="input" type="password" name="password" required>
+        <input class="input" type="password" name="password">
+      </div>
+      <div>
+        <label class="text-xs text-zinc-400">Chave privada SSH (alternativa à senha)</label>
+        <textarea class="input" name="private_key" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."></textarea>
       </div>
       <div class="text-xs text-zinc-500">
-        O usuário precisa ter acesso root (ou sudo sem senha), pois nginx/certbot serão instalados automaticamente após salvar.
+        Preencha senha OU chave privada. O usuário precisa ter acesso root (ou sudo sem senha), pois nginx/certbot serão instalados automaticamente após salvar.
       </div>
       <button class="btn bg-cyan-700 hover:bg-cyan-600 w-full justify-center" type="submit">Adicionar VPS</button>
     </form>

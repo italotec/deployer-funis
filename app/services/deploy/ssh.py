@@ -9,6 +9,18 @@ import uuid
 import paramiko
 
 
+def _load_private_key(pem: str):
+    """Keys stored on Vps rows aren't always RSA (e.g. ed25519 from ssh-keygen/PuTTYgen),
+    so try each key type paramiko supports instead of assuming RSA."""
+    last_exc = None
+    for key_cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey, paramiko.DSSKey):
+        try:
+            return key_cls.from_private_key(io.StringIO(pem))
+        except paramiko.SSHException as exc:
+            last_exc = exc
+    raise last_exc
+
+
 class SSHSession:
     """Thin wrapper around paramiko for exec + SFTP upload, with retrying connect
     (a freshly provisioned VPS may take a minute to accept SSH connections)."""
@@ -29,7 +41,7 @@ class SSHSession:
                 client = paramiko.SSHClient()
                 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 if self.private_key_pem:
-                    pkey = paramiko.RSAKey.from_private_key(io.StringIO(self.private_key_pem))
+                    pkey = _load_private_key(self.private_key_pem)
                     client.connect(self.host, port=self.port, username=self.user, pkey=pkey, timeout=self.timeout)
                 else:
                     client.connect(self.host, port=self.port, username=self.user, password=self.password, timeout=self.timeout)
