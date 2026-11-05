@@ -5,7 +5,7 @@ load_dotenv()
 
 from app import create_app
 
-app = create_app()
+app = create_app(run_startup_sweep=True)
 
 if __name__ == "__main__":
     app.run(

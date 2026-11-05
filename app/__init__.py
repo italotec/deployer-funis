@@ -16,7 +16,7 @@ _NON_TERMINAL_DEPLOYMENT_STATUSES = [
 _NON_TERMINAL_BATCH_STATUSES = ["queued", "running"]
 
 
-def create_app():
+def create_app(run_startup_sweep: bool = False):
     app = Flask(__name__)
     app.config.from_object(Config)
 
@@ -110,29 +110,33 @@ def create_app():
 
         # Recover state left behind by a crash/restart — in-process threads die with
         # the process, so anything mid-flight is stuck forever unless marked as failed here.
-        from .models import Vps, Deployment, DeployBatch, Domain
+        # Gated behind run_startup_sweep so that ad-hoc scripts/shells importing create_app()
+        # for inspection don't mark real in-flight jobs (running in the actual server process)
+        # as failed — only run.py's own startup passes run_startup_sweep=True.
+        if run_startup_sweep:
+            from .models import Vps, Deployment, DeployBatch, Domain
 
-        stuck_gsc = Domain.query.filter(Domain.gsc_status == "running").all()
-        for d in stuck_gsc:
-            d.gsc_status = "error"
-            d.gsc_message = "Interrompido: servidor reiniciou. Tente novamente."
+            stuck_gsc = Domain.query.filter(Domain.gsc_status == "running").all()
+            for d in stuck_gsc:
+                d.gsc_status = "error"
+                d.gsc_message = "Interrompido: servidor reiniciou. Tente novamente."
 
-        stuck_vps = Vps.query.filter(Vps.status == "provisioning").all()
-        for v in stuck_vps:
-            v.status = "error"
-            v.last_message = "Interrompido: servidor reiniciou durante o provisionamento."
+            stuck_vps = Vps.query.filter(Vps.status == "provisioning").all()
+            for v in stuck_vps:
+                v.status = "error"
+                v.last_message = "Interrompido: servidor reiniciou durante o provisionamento."
 
-        stuck_deployments = Deployment.query.filter(Deployment.status.in_(_NON_TERMINAL_DEPLOYMENT_STATUSES)).all()
-        for d in stuck_deployments:
-            d.status = "error"
-            d.last_message = "Interrompido: servidor reiniciou durante o deploy."
+            stuck_deployments = Deployment.query.filter(Deployment.status.in_(_NON_TERMINAL_DEPLOYMENT_STATUSES)).all()
+            for d in stuck_deployments:
+                d.status = "error"
+                d.last_message = "Interrompido: servidor reiniciou durante o deploy."
 
-        stuck_batches = DeployBatch.query.filter(DeployBatch.status.in_(_NON_TERMINAL_BATCH_STATUSES)).all()
-        for b in stuck_batches:
-            b.status = "done_with_errors"
+            stuck_batches = DeployBatch.query.filter(DeployBatch.status.in_(_NON_TERMINAL_BATCH_STATUSES)).all()
+            for b in stuck_batches:
+                b.status = "done_with_errors"
 
-        if stuck_gsc or stuck_vps or stuck_deployments or stuck_batches:
-            db.session.commit()
+            if stuck_gsc or stuck_vps or stuck_deployments or stuck_batches:
+                db.session.commit()
 
         # Seed admin df/df
         from .models import User
