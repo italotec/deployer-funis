@@ -72,6 +72,24 @@ def _resolve_node_entry(app_dir: str, pkg: dict) -> str:
     return ""
 
 
+def _flatten_single_wrapper_dir(dest_dir: str):
+    """Some zips are a single top-level folder containing the actual site, rather than
+    the site's own files at the zip root (e.g. zipping a folder instead of its
+    contents). PHP/static deploys copy dest_dir straight into nginx's webroot with no
+    offset, so index.php/index.html ends up one level too deep and nginx 403s with
+    "directory index forbidden". Promote the wrapper folder's contents up a level
+    when dest_dir holds exactly one entry and it's a directory."""
+    entries = os.listdir(dest_dir)
+    if len(entries) != 1:
+        return
+    wrapper = os.path.join(dest_dir, entries[0])
+    if not os.path.isdir(wrapper):
+        return
+    for name in os.listdir(wrapper):
+        shutil.move(os.path.join(wrapper, name), os.path.join(dest_dir, name))
+    os.rmdir(wrapper)
+
+
 def _detect_stack(dest_dir: str) -> tuple[str, str, str]:
     """Returns (stack, app_root, entry_file) for a freshly extracted funnel.
 
@@ -102,6 +120,8 @@ def _detect_stack(dest_dir: str) -> tuple[str, str, str]:
                 "reconhecível (server.js, app.js, index.js) — não é possível iniciar o funil Node."
             )
         return "node", node_dir, entry_file
+
+    _flatten_single_wrapper_dir(dest_dir)
 
     has_php = False
     for root, dirs, files in os.walk(dest_dir):
